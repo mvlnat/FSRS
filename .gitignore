@@ -1,0 +1,44 @@
+# Environment files with secrets
+.env
+.env.local
+.env.production
+.env.*.local
+
+# SSL certificates
+certs/
+*.pem
+*.key
+*.crt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# Build artifacts
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+/backend/tmp/
+/backend/vendor/
+
+# Node
+node_modules/
