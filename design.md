@@ -1,17 +1,36 @@
-making a web app for spaced repetition learning
+# FSRS - Spaced Repetition Web App
 
-- frontend: typescript react
-- backend: golang
-- database: postgres
-- hosting: vm
+## Tech Stack
 
-## MVP Features
+- **Frontend**: TypeScript, React, Vite
+- **Backend**: Go (Chi router, pgx, go-fsrs)
+- **Database**: PostgreSQL
+- **Hosting**: DigitalOcean Droplet (Docker Compose)
 
-- User authentication (signup/login)
+## Features
+
+### Core
+- User authentication (signup/login with JWT in httpOnly cookies)
 - Create/edit/delete flashcard decks
 - Create/edit/delete cards within decks
-- Study session with FSRS algorithm (using go-fsrs library)
+- Study session with FSRS algorithm
 - Track review history and progress
+- Import/export decks (JSON)
+
+### Cards
+- Front/back text with markdown support
+- Optional link field
+- Tags for categorization
+- Search by front/back content
+- Sort by date, alphabetical, review count
+- Filter by tag
+
+### Study
+- Keyboard shortcuts (Space to flip, 1-4 for ratings)
+- Progress bar
+- Session statistics
+
+---
 
 ## Project Structure
 
@@ -19,66 +38,66 @@ making a web app for spaced repetition learning
 fsrs/
 ├── frontend/
 │   ├── src/
-│   │   ├── components/
-│   │   │   ├── Auth/
-│   │   │   ├── Deck/
-│   │   │   ├── Card/
-│   │   │   └── Study/
+│   │   ├── api/
+│   │   │   └── client.ts        # API functions
+│   │   ├── hooks/
+│   │   │   └── useAuth.tsx      # Auth context & provider
 │   │   ├── pages/
-│   │   │   ├── Home.tsx
 │   │   │   ├── Login.tsx
 │   │   │   ├── Register.tsx
-│   │   │   ├── Decks.tsx
-│   │   │   ├── DeckEdit.tsx
-│   │   │   └── Study.tsx
-│   │   ├── hooks/
-│   │   ├── api/
+│   │   │   ├── Decks.tsx        # Deck list with stats
+│   │   │   ├── DeckEdit.tsx     # Cards, tags, settings
+│   │   │   └── Study.tsx        # Flashcard review
 │   │   ├── types/
-│   │   └── App.tsx
+│   │   │   └── index.ts
+│   │   ├── App.tsx              # Routes & layout
+│   │   └── App.css              # All styles
 │   ├── package.json
-│   └── vite.config.ts
+│   └── Dockerfile
 │
 ├── backend/
-│   ├── cmd/
-│   │   └── server/
-│   │       └── main.go
+│   ├── cmd/server/
+│   │   └── main.go              # Entry point, routes, migrations
 │   ├── internal/
 │   │   ├── handler/
 │   │   │   ├── auth.go
-│   │   │   ├── auth_test.go
 │   │   │   ├── deck.go
 │   │   │   ├── card.go
 │   │   │   ├── study.go
-│   │   │   ├── security_test.go
-│   │   │   └── integration_test.go
+│   │   │   └── tag.go
 │   │   ├── model/
 │   │   │   ├── user.go
 │   │   │   ├── deck.go
 │   │   │   ├── card.go
+│   │   │   ├── tag.go
 │   │   │   └── review.go
 │   │   ├── repository/
+│   │   │   ├── db.go
+│   │   │   ├── user.go
+│   │   │   ├── deck.go
+│   │   │   ├── card.go
+│   │   │   └── tag.go
 │   │   ├── service/
-│   │   │   ├── fsrs.go
-│   │   │   └── fsrs_test.go
+│   │   │   └── fsrs.go          # FSRS algorithm wrapper
 │   │   └── middleware/
-│   │       ├── auth.go
-│   │       ├── ratelimit.go
-│   │       └── ratelimit_test.go
-│   ├── migrations/
+│   │       ├── auth.go          # JWT validation
+│   │       └── ratelimit.go     # Rate limiting
 │   ├── go.mod
-│   └── go.sum
+│   └── Dockerfile
 │
 ├── docker-compose.yml
-├── Dockerfile.frontend
-├── Dockerfile.backend
+├── docker-compose.prod.yml
 ├── nginx.conf
-└── .env.example
+├── claude.md                    # Development guidelines
+└── design.md                    # This file
 ```
+
+---
 
 ## Database Schema
 
 ```sql
--- users
+-- Users
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -86,7 +105,7 @@ CREATE TABLE users (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- decks
+-- Decks
 CREATE TABLE decks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -94,21 +113,20 @@ CREATE TABLE decks (
     description TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
-
 CREATE INDEX idx_decks_user_id ON decks(user_id);
 
--- cards
+-- Cards
 CREATE TABLE cards (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
     front TEXT NOT NULL,
     back TEXT NOT NULL,
+    link TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
-
 CREATE INDEX idx_cards_deck_id ON cards(deck_id);
 
--- card_states (FSRS scheduling data)
+-- Card States (FSRS scheduling data)
 -- state: 0=New, 1=Learning, 2=Review, 3=Relearning
 CREATE TABLE card_states (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -123,141 +141,237 @@ CREATE TABLE card_states (
     state INT DEFAULT 0,
     last_review TIMESTAMPTZ
 );
-
 CREATE INDEX idx_card_states_due ON card_states(due);
 
--- reviews (history log)
+-- Reviews (history log)
 CREATE TABLE reviews (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
     rating INT NOT NULL CHECK (rating >= 1 AND rating <= 4),
     reviewed_at TIMESTAMPTZ DEFAULT NOW()
 );
-
 CREATE INDEX idx_reviews_card_id ON reviews(card_id);
+
+-- Tags (per-deck)
+CREATE TABLE tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(deck_id, name)
+);
+CREATE INDEX idx_tags_deck_id ON tags(deck_id);
+
+-- Card-Tag Association (many-to-many)
+CREATE TABLE card_tags (
+    card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (card_id, tag_id)
+);
+CREATE INDEX idx_card_tags_card_id ON card_tags(card_id);
+CREATE INDEX idx_card_tags_tag_id ON card_tags(tag_id);
 ```
+
+---
 
 ## API Endpoints
 
 ```
 Auth (JWT in httpOnly cookie)
 ------------------------------
-POST   /api/auth/register
-POST   /api/auth/login
+POST   /api/auth/register      { email, password }
+POST   /api/auth/login         { email, password }
 POST   /api/auth/logout
 GET    /api/auth/me
 
 Decks
 ------------------------------
-GET    /api/decks
-POST   /api/decks
-POST   /api/decks/import         (import deck from JSON)
+GET    /api/decks              List with stats (batch query)
+POST   /api/decks              { name, description }
+POST   /api/decks/import       { name, description, cards[] }
 GET    /api/decks/:id
-PUT    /api/decks/:id
+PUT    /api/decks/:id          { name, description }
 DELETE /api/decks/:id
-GET    /api/decks/:id/stats      (cards total, due today, new)
-GET    /api/decks/:id/export     (export deck as JSON)
+GET    /api/decks/:id/stats
+GET    /api/decks/:id/export
 
 Cards
 ------------------------------
-GET    /api/decks/:id/cards
-POST   /api/decks/:id/cards
+GET    /api/decks/:id/cards    List with state and tags
+POST   /api/decks/:id/cards    { front, back, link }
 GET    /api/cards/:id
-PUT    /api/cards/:id
+PUT    /api/cards/:id          { front, back, link }
 DELETE /api/cards/:id
+
+Tags
+------------------------------
+GET    /api/decks/:deckId/tags
+POST   /api/decks/:deckId/tags { name }
+DELETE /api/tags/:tagId
+PUT    /api/cards/:cardId/tags { tag_ids[] }
 
 Study
 ------------------------------
-GET    /api/study/stats            (user study statistics)
-GET    /api/study/:deckId          (get due cards)
-POST   /api/study/:cardId/review   (submit rating 1-4)
+GET    /api/study/stats
+GET    /api/study/:deckId      Get due cards
+POST   /api/study/:cardId/review { rating: 1-4 }
 ```
+
+---
+
+## Architecture Patterns
+
+### Backend
+
+**Repository Pattern**
+- Each entity has a repository (UserRepository, DeckRepository, etc.)
+- Repositories handle all database operations
+- Handlers call repositories, not direct SQL
+
+**Handler Structure**
+```go
+func (h *Handler) Method(w http.ResponseWriter, r *http.Request) {
+    // 1. Get user from context (auth middleware)
+    // 2. Parse request (URL params, body)
+    // 3. Validate input
+    // 4. Check authorization (ownership)
+    // 5. Call repository
+    // 6. Return JSON response
+}
+```
+
+**Authorization Pattern**
+- All resources checked for ownership
+- Get resource → check if user owns parent deck → proceed or 403
+
+### Frontend
+
+**Auth Context Pattern**
+```tsx
+// useAuth.tsx
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function AuthProvider({ children }) {
+  const [state, setState] = useState({ user, loading, error });
+  // login, register, logout functions
+  return <AuthContext.Provider value={...}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
+
+// App.tsx
+<AuthProvider>
+  <BrowserRouter>
+    <Layout>
+      <Routes>...</Routes>
+    </Layout>
+  </BrowserRouter>
+</AuthProvider>
+```
+
+**Filtering/Sorting Pattern**
+```tsx
+const filteredItems = useMemo(() => {
+  let result = [...items];
+  if (searchQuery) result = result.filter(...);
+  if (filterTag) result = result.filter(...);
+  result.sort(...);
+  return result;
+}, [items, searchQuery, filterTag, sortBy]);
+```
+
+---
+
+## Security Measures
+
+### Authentication
+- JWT in httpOnly cookies (XSS protection)
+- SameSite=Lax (CSRF protection)
+- 7-day expiration
+- Bcrypt password hashing (cost=10)
+- Email validation (regex)
+- Password minimum 8 characters
+
+### API Security
+- Rate limiting on auth endpoints (10 req/min)
+- Request body size limits (10MB)
+- JWT algorithm validation (prevent alg:none)
+- X-Forwarded-For first-IP-only (prevent spoofing)
+- Content-Disposition header sanitization
+- All queries parameterized (SQL injection prevention)
+
+### CORS
+- Whitelist allowed origins
+- AllowCredentials for cookies
+- Configurable via CORS_ORIGINS env var
+
+---
+
+## UI/UX Design
+
+### Style System (Apple-inspired)
+- System font stack
+- Rounded corners (12-20px)
+- Subtle shadows
+- Blur backdrop on header
+- Smooth transitions
+
+### Components
+- **Buttons**: Pill-shaped, hover scale
+- **Inputs**: Rounded, focus ring
+- **Cards**: White background, shadow on hover
+- **Tabs**: Segmented control style
+- **Icons**: Consistent 32x32 icon buttons
+
+### Responsive
+- Mobile-first approach
+- Flex wrap for button groups
+- Stack layout on small screens
+
+---
+
+## Deployment
+
+### Docker Images
+- Multi-stage builds (builder → runtime)
+- Alpine base images
+- Platform: linux/amd64
+
+### Production Stack
+- Nginx reverse proxy (SSL termination)
+- PostgreSQL container
+- Backend serves API on :8080
+- Frontend as static files
+
+### Environment Variables
+```
+DATABASE_URL=postgres://...
+JWT_SECRET=<random 32 bytes>
+SECURE_COOKIES=true
+CORS_ORIGINS=https://fsrs.ziyang.li
+```
+
+---
 
 ## Testing
 
 ```bash
-# Run unit tests
+# Backend unit tests
 cd backend && go test ./internal/...
 
-# Run integration tests (requires test DB)
-TEST_DATABASE_URL=postgres://... go test -tags=integration ./internal/handler/...
-
-# Run frontend type check
+# Frontend type check
 cd frontend && npm run build
 ```
 
-## Auth Strategy
+---
 
-- JWT stored in httpOnly cookie (sameSite=lax for localhost compatibility)
-- Token expires in 7 days
-- Middleware extracts user from token, rejects if invalid/expired
-- Password hashed with bcrypt (cost=10)
+## Future Enhancements
 
-## VM Deployment
-
-**Stack**
-- Docker Compose for orchestration
-- Nginx reverse proxy (SSL termination)
-- PostgreSQL container
-- Backend serves API on :8080
-- Frontend built as static files served by Nginx
-
-**Config**
-- Environment variables via .env file
-- Secrets: DB password, JWT secret
-- Let's Encrypt for SSL via certbot
-- `nslookup fsrs.ziyang.li`
-- `sudo certbot --nginx -d fsrs.ziyang.li`
-
-**Operations**
-- Systemd service for auto-restart
-- Daily pg_dump backup to object storage
-- Nginx access logs for monitoring
-
-## Production Polish
-
-**UI/UX**
-- Keyboard shortcuts (spacebar to flip, 1-4 for ratings)
-- Mobile responsive design
-- Progress bar during study sessions
-
-**Features**
-- Import/export decks (JSON)
-- Study statistics (retention rate, cards reviewed)
-
-**Security**
-- Rate limiting on auth endpoints (10 req/min per IP)
-- Input sanitization (React auto-escapes XSS)
-- Parameterized SQL queries (prevents SQL injection)
-- Password hashing with bcrypt
-- JWT in httpOnly cookies (prevents XSS token theft)
-- CORS restricted to allowed origins
-- All sensitive routes require authentication middleware
-
-## Security Checklist
-
-**Secrets Management**
-- [ ] Generate strong JWT_SECRET: `openssl rand -base64 32`
-- [ ] Generate strong DB password: `openssl rand -base64 32`
-- [ ] Never commit .env to git (already in .gitignore)
-- [ ] Rotate secrets periodically
-
-**Database Security**
-- [ ] Use SSL for DB connections: `sslmode=require`
-- [ ] Create dedicated DB user with minimal privileges
-- [ ] Regular backups with `pg_dump`
-- [ ] Store backups encrypted
-
-**VM/Server Security**
-- [ ] SSH key-only authentication (disable password login)
-- [ ] Firewall: only allow 22 (SSH), 80, 443
-- [ ] Keep system packages updated
-- [ ] Use fail2ban for SSH protection
-
-**API Security**
-- [x] Rate limiting on auth endpoints
-- [x] JWT expiration (7 days for refresh)
-- [x] httpOnly cookies (XSS protection)
-- [x] CORS whitelist
-- [x] Input validation on all endpoints
-- [x] Authorization checks on all protected resources
+- [ ] Deck sharing (public decks)
+- [ ] Multiple card types (cloze, image)
+- [ ] Spaced repetition statistics graphs
+- [ ] Mobile app (React Native)
+- [ ] Offline support (PWA)
+- [ ] AI-generated cards from text
