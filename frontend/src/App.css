@@ -155,11 +155,13 @@ button:disabled {
   text-decoration: none;
 }
 
-.card-link-btn {
-  display: block;
-  width: fit-content;
-  margin: 16px auto 0;
+.card-link-wrapper {
   text-align: center;
+  margin-top: 16px;
+}
+
+.card-link-btn {
+  display: inline-block;
   background: var(--bg-secondary);
   color: var(--accent);
   padding: 10px 20px;
@@ -514,6 +516,163 @@ button:disabled {
   box-shadow: var(--shadow-sm);
 }
 
+/* Tags Section */
+.tags-section {
+  margin-top: 32px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-primary);
+}
+
+.tags-section h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.tags-section > p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.add-tag-form {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.add-tag-form input {
+  flex: 1;
+  padding: 10px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  font-size: 15px;
+  font-family: var(--font-system);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.add-tag-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.12);
+}
+
+.add-tag-form button {
+  padding: 10px 20px;
+  font-size: 15px;
+}
+
+.tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.tag-name {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.tag-item .btn-icon {
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+}
+
+.no-tags {
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+
+/* Tag Filter */
+.tag-filter-select {
+  padding: 10px 32px 10px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  font-size: 15px;
+  font-family: var(--font-system);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+.tag-filter-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.12);
+}
+
+/* Tag Selector in Card Edit */
+.tag-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-btn {
+  padding: 6px 12px;
+  font-size: 14px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 16px;
+}
+
+.tag-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  transform: none;
+}
+
+.tag-btn.active {
+  background: var(--accent);
+  color: white;
+}
+
+.tag-btn.active:hover {
+  background: var(--accent-hover);
+}
+
+/* Card Tags Display */
+.card-preview-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.card-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--accent);
+  color: white;
+  font-size: 11px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
 /* Danger Zone */
 .danger-zone {
   margin-top: 32px;
@@ -754,7 +913,8 @@ button:disabled {
   flex-shrink: 0;
 }
 
-.btn-icon {
+.btn-icon,
+a.btn-icon {
   width: 32px;
   height: 32px;
   padding: 0;
@@ -762,12 +922,18 @@ button:disabled {
   color: var(--text-secondary);
   border-radius: 8px;
   font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
-.btn-icon:hover {
+.btn-icon:hover,
+a.btn-icon:hover {
   background: var(--bg-tertiary);
   color: var(--text-primary);
   transform: none;
+  text-decoration: none;
 }
 
 .btn-icon-danger:hover {

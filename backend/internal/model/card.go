@@ -32,4 +32,5 @@ type CardState struct {
 type CardWithState struct {
 	Card
 	State *CardState `json:"state,omitempty"`
+	Tags  []Tag      `json:"tags"`
 }

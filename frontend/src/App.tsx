@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from './hooks/useAuth';
+import { useAuth, AuthProvider } from './hooks/useAuth';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Decks } from './pages/Decks';
@@ -48,52 +48,54 @@ function Layout({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              <PublicRoute>
-                <Login />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/register"
-            element={
-              <PublicRoute>
-                <Register />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/"
-            element={
-              <PrivateRoute>
-                <Decks />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/decks/:id"
-            element={
-              <PrivateRoute>
-                <DeckEdit />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/study/:deckId"
-            element={
-              <PrivateRoute>
-                <Study />
-              </PrivateRoute>
-            }
-          />
-        </Routes>
-      </Layout>
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <Layout>
+          <Routes>
+            <Route
+              path="/login"
+              element={
+                <PublicRoute>
+                  <Login />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <PublicRoute>
+                  <Register />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/"
+              element={
+                <PrivateRoute>
+                  <Decks />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/decks/:id"
+              element={
+                <PrivateRoute>
+                  <DeckEdit />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/study/:deckId"
+              element={
+                <PrivateRoute>
+                  <Study />
+                </PrivateRoute>
+              }
+            />
+          </Routes>
+        </Layout>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 

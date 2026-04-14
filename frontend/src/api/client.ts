@@ -1,4 +1,4 @@
-import type { User, Deck, DeckWithStats, Card, CardWithState, CardState, DeckStats } from '../types';
+import type { User, Deck, DeckWithStats, Card, CardWithState, CardState, DeckStats, Tag } from '../types';
 
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:8080/api';
 
@@ -156,4 +156,27 @@ export interface StudyStats {
 
 export async function getStudyStats(): Promise<StudyStats> {
   return request<StudyStats>('/study/stats');
+}
+
+// Tags
+export async function getTags(deckId: string): Promise<Tag[]> {
+  return request<Tag[]>(`/decks/${deckId}/tags`);
+}
+
+export async function createTag(deckId: string, name: string): Promise<Tag> {
+  return request<Tag>(`/decks/${deckId}/tags`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function deleteTag(tagId: string): Promise<void> {
+  return request<void>(`/tags/${tagId}`, { method: 'DELETE' });
+}
+
+export async function setCardTags(cardId: string, tagIds: string[]): Promise<Tag[]> {
+  return request<Tag[]>(`/cards/${cardId}/tags`, {
+    method: 'PUT',
+    body: JSON.stringify({ tag_ids: tagIds }),
+  });
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { Deck, CardWithState } from '../types';
+import type { Deck, CardWithState, Tag } from '../types';
 import * as api from '../api/client';
 
 type Tab = 'settings' | 'cards';
@@ -11,18 +11,23 @@ export function DeckEdit() {
   const navigate = useNavigate();
   const [deck, setDeck] = useState<Deck | null>(null);
   const [cards, setCards] = useState<CardWithState[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('cards');
 
-  // Search and sort state
+  // Search, sort, and filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('newest');
+  const [filterTagId, setFilterTagId] = useState<string>('');
 
   // Deck settings state
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [savingDeck, setSavingDeck] = useState(false);
+
+  // Tag management state
+  const [newTagName, setNewTagName] = useState('');
 
   // Add card state
   const [showAddCard, setShowAddCard] = useState(false);
@@ -35,6 +40,7 @@ export function DeckEdit() {
   const [editFront, setEditFront] = useState('');
   const [editBack, setEditBack] = useState('');
   const [editLink, setEditLink] = useState('');
+  const [editTagIds, setEditTagIds] = useState<string[]>([]);
 
   // Filtered and sorted cards
   const filteredCards = useMemo(() => {
@@ -46,6 +52,13 @@ export function DeckEdit() {
       result = result.filter(card =>
         card.front.toLowerCase().includes(query) ||
         card.back.toLowerCase().includes(query)
+      );
+    }
+
+    // Filter by tag
+    if (filterTagId) {
+      result = result.filter(card =>
+        card.tags?.some(tag => tag.id === filterTagId)
       );
     }
 
@@ -68,7 +81,7 @@ export function DeckEdit() {
     });
 
     return result;
-  }, [cards, searchQuery, sortBy]);
+  }, [cards, searchQuery, sortBy, filterTagId]);
 
   useEffect(() => {
     if (id) loadDeck();
@@ -77,12 +90,14 @@ export function DeckEdit() {
   const loadDeck = async () => {
     if (!id) return;
     try {
-      const [deckData, cardsData] = await Promise.all([
+      const [deckData, cardsData, tagsData] = await Promise.all([
         api.getDeck(id),
         api.getCards(id),
+        api.getTags(id),
       ]);
       setDeck(deckData);
       setCards(cardsData);
+      setTags(tagsData);
       setName(deckData.name);
       setDescription(deckData.description);
     } catch (err) {
@@ -124,11 +139,43 @@ export function DeckEdit() {
   const handleEditCard = async (cardId: string) => {
     try {
       await api.updateCard(cardId, editFront, editBack, editLink);
+      await api.setCardTags(cardId, editTagIds);
       setEditingCard(null);
       loadDeck();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update card');
     }
+  };
+
+  const handleAddTag = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !newTagName.trim()) return;
+    try {
+      await api.createTag(id, newTagName.trim());
+      setNewTagName('');
+      loadDeck();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create tag');
+    }
+  };
+
+  const handleDeleteTag = async (tagId: string) => {
+    if (!confirm('Delete this tag? It will be removed from all cards.')) return;
+    try {
+      await api.deleteTag(tagId);
+      if (filterTagId === tagId) setFilterTagId('');
+      loadDeck();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete tag');
+    }
+  };
+
+  const toggleEditTag = (tagId: string) => {
+    setEditTagIds(prev =>
+      prev.includes(tagId)
+        ? prev.filter(id => id !== tagId)
+        : [...prev, tagId]
+    );
   };
 
   const handleDeleteCard = async (cardId: string) => {
@@ -157,6 +204,7 @@ export function DeckEdit() {
     setEditFront(card.front);
     setEditBack(card.back);
     setEditLink(card.link || '');
+    setEditTagIds(card.tags?.map(t => t.id) || []);
   };
 
   const getFirstLine = (text: string): string => {
@@ -226,6 +274,39 @@ export function DeckEdit() {
             </button>
           </form>
 
+          <div className="tags-section">
+            <h3>Tags</h3>
+            <p>Create tags to categorize your cards. Tags can be assigned to cards when editing them.</p>
+            <form onSubmit={handleAddTag} className="add-tag-form">
+              <input
+                type="text"
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                placeholder="New tag name..."
+                maxLength={100}
+              />
+              <button type="submit" disabled={!newTagName.trim()}>Add Tag</button>
+            </form>
+            {tags.length > 0 ? (
+              <div className="tags-list">
+                {tags.map(tag => (
+                  <div key={tag.id} className="tag-item">
+                    <span className="tag-name">{tag.name}</span>
+                    <button
+                      onClick={() => handleDeleteTag(tag.id)}
+                      className="btn-icon btn-icon-danger"
+                      title="Delete tag"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="no-tags">No tags yet. Create your first tag above.</p>
+            )}
+          </div>
+
           <div className="danger-zone">
             <h3>Danger Zone</h3>
             <p>Once you delete a deck, there is no going back. Please be certain.</p>
@@ -258,6 +339,18 @@ export function DeckEdit() {
               )}
             </div>
             <div className="cards-toolbar-right">
+              {tags.length > 0 && (
+                <select
+                  value={filterTagId}
+                  onChange={(e) => setFilterTagId(e.target.value)}
+                  className="tag-filter-select"
+                >
+                  <option value="">All Tags</option>
+                  {tags.map(tag => (
+                    <option key={tag.id} value={tag.id}>{tag.name}</option>
+                  ))}
+                </select>
+              )}
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as SortOption)}
@@ -358,6 +451,23 @@ export function DeckEdit() {
                           placeholder="https://..."
                         />
                       </div>
+                      {tags.length > 0 && (
+                        <div className="form-group">
+                          <label>Tags</label>
+                          <div className="tag-selector">
+                            {tags.map(tag => (
+                              <button
+                                key={tag.id}
+                                type="button"
+                                className={`tag-btn ${editTagIds.includes(tag.id) ? 'active' : ''}`}
+                                onClick={() => toggleEditTag(tag.id)}
+                              >
+                                {tag.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div className="card-edit-actions">
                         <button onClick={() => handleEditCard(card.id)}>Save</button>
                         <button onClick={() => setEditingCard(null)} className="btn-secondary">Cancel</button>
@@ -366,7 +476,16 @@ export function DeckEdit() {
                   ) : (
                     <div className="card-row">
                       <div className="card-preview" onClick={() => startEditing(card)}>
-                        <span className="card-preview-text">{getFirstLine(card.front)}</span>
+                        <div className="card-preview-main">
+                          <span className="card-preview-text">{getFirstLine(card.front)}</span>
+                          {card.tags && card.tags.length > 0 && (
+                            <div className="card-tags">
+                              {card.tags.map(tag => (
+                                <span key={tag.id} className="card-tag">{tag.name}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         {card.state && (
                           <span className="card-preview-meta">
                             {card.state.reps > 0 ? `${card.state.reps} reps` : 'New'}

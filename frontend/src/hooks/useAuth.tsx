@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from 'react';
 import type { User } from '../types';
 import * as api from '../api/client';
 
@@ -8,7 +8,16 @@ interface AuthState {
   error: string | null;
 }
 
-export function useAuth() {
+interface AuthContextType extends AuthState {
+  login: (email: string, password: string) => Promise<User>;
+  register: (email: string, password: string) => Promise<User>;
+  logout: () => Promise<void>;
+  isAuthenticated: boolean;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
     loading: true,
@@ -59,10 +68,11 @@ export function useAuth() {
       await api.logout();
     } finally {
       setState({ user: null, loading: false, error: null });
+      window.location.href = '/';
     }
   };
 
-  return {
+  const value: AuthContextType = {
     user: state.user,
     loading: state.loading,
     error: state.error,
@@ -71,4 +81,14 @@ export function useAuth() {
     logout,
     isAuthenticated: !!state.user,
   };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 }

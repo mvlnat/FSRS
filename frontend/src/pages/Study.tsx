@@ -230,9 +230,11 @@ export function Study() {
                 <h3>Answer</h3>
                 <div className="flashcard-text">{renderMarkdown(currentCard.back)}</div>
                 {currentCard.link && (
-                  <a href={currentCard.link} target="_blank" rel="noopener noreferrer" className="card-link-btn">
-                    Open Link
-                  </a>
+                  <div className="card-link-wrapper">
+                    <a href={currentCard.link} target="_blank" rel="noopener noreferrer" className="card-link-btn">
+                      Open Link
+                    </a>
+                  </div>
                 )}
               </div>
             )}

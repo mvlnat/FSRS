@@ -47,6 +47,14 @@ export interface CardState {
 
 export interface CardWithState extends Card {
   state?: CardState;
+  tags: Tag[];
+}
+
+export interface Tag {
+  id: string;
+  deck_id: string;
+  name: string;
+  created_at: string;
 }
 
 export interface Review {

@@ -52,6 +52,7 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	deckRepo := repository.NewDeckRepository(db)
 	cardRepo := repository.NewCardRepository(db)
+	tagRepo := repository.NewTagRepository(db)
 
 	// Initialize services
 	fsrsService := service.NewFSRSService()
@@ -59,8 +60,9 @@ func main() {
 	// Initialize handlers
 	authHandler := handler.NewAuthHandler(userRepo, jwtSecret, secureCookies)
 	deckHandler := handler.NewDeckHandler(deckRepo, cardRepo)
-	cardHandler := handler.NewCardHandler(cardRepo, deckRepo)
+	cardHandler := handler.NewCardHandler(cardRepo, deckRepo, tagRepo)
 	studyHandler := handler.NewStudyHandler(cardRepo, deckRepo, fsrsService)
+	tagHandler := handler.NewTagHandler(tagRepo, deckRepo, cardRepo)
 
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(jwtSecret)
@@ -112,6 +114,12 @@ func main() {
 		r.Get("/api/cards/{id}", cardHandler.Get)
 		r.Put("/api/cards/{id}", cardHandler.Update)
 		r.Delete("/api/cards/{id}", cardHandler.Delete)
+
+		// Tags
+		r.Get("/api/decks/{deckId}/tags", tagHandler.ListByDeck)
+		r.Post("/api/decks/{deckId}/tags", tagHandler.Create)
+		r.Delete("/api/tags/{tagId}", tagHandler.Delete)
+		r.Put("/api/cards/{cardId}/tags", tagHandler.SetCardTags)
 
 		// Study
 		r.Get("/api/study/stats", studyHandler.GetStats)
@@ -194,6 +202,25 @@ BEGIN
         ALTER TABLE cards ADD COLUMN link TEXT DEFAULT '';
     END IF;
 END $$;
+
+CREATE TABLE IF NOT EXISTS tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(deck_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tags_deck_id ON tags(deck_id);
+
+CREATE TABLE IF NOT EXISTS card_tags (
+    card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (card_id, tag_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_tags_card_id ON card_tags(card_id);
+CREATE INDEX IF NOT EXISTS idx_card_tags_tag_id ON card_tags(tag_id);
 `
 	_, err := db.Pool.Exec(ctx, migration)
 	return err
