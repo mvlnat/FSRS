@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { Deck, CardWithState } from '../types';
 import * as api from '../api/client';
 
 type Tab = 'settings' | 'cards';
+type SortOption = 'newest' | 'oldest' | 'alpha' | 'mostReviews' | 'leastReviews';
 
 export function DeckEdit() {
   const { id } = useParams<{ id: string }>();
@@ -13,6 +14,10 @@ export function DeckEdit() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('cards');
+
+  // Search and sort state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<SortOption>('newest');
 
   // Deck settings state
   const [name, setName] = useState('');
@@ -30,6 +35,40 @@ export function DeckEdit() {
   const [editFront, setEditFront] = useState('');
   const [editBack, setEditBack] = useState('');
   const [editLink, setEditLink] = useState('');
+
+  // Filtered and sorted cards
+  const filteredCards = useMemo(() => {
+    let result = [...cards];
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(card =>
+        card.front.toLowerCase().includes(query) ||
+        card.back.toLowerCase().includes(query)
+      );
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case 'oldest':
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        case 'newest':
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case 'alpha':
+          return a.front.localeCompare(b.front);
+        case 'mostReviews':
+          return (b.state?.reps || 0) - (a.state?.reps || 0);
+        case 'leastReviews':
+          return (a.state?.reps || 0) - (b.state?.reps || 0);
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [cards, searchQuery, sortBy]);
 
   useEffect(() => {
     if (id) loadDeck();
@@ -199,10 +238,41 @@ export function DeckEdit() {
 
       {activeTab === 'cards' && (
         <div className="cards-section">
-          <div className="cards-header">
-            <button onClick={() => setShowAddCard(!showAddCard)}>
-              {showAddCard ? 'Cancel' : 'Add Card'}
-            </button>
+          <div className="cards-toolbar">
+            <div className="search-box">
+              <input
+                type="text"
+                placeholder="Search cards..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="search-input"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="search-clear"
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <div className="cards-toolbar-right">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as SortOption)}
+                className="sort-select"
+              >
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+                <option value="alpha">Alphabetical</option>
+                <option value="mostReviews">Most Reviews</option>
+                <option value="leastReviews">Least Reviews</option>
+              </select>
+              <button onClick={() => setShowAddCard(!showAddCard)}>
+                {showAddCard ? 'Cancel' : 'Add Card'}
+              </button>
+            </div>
           </div>
 
           {showAddCard && (
@@ -251,8 +321,10 @@ export function DeckEdit() {
           <div className="cards-list">
             {cards.length === 0 ? (
               <p className="no-cards">No cards yet. Add your first card!</p>
+            ) : filteredCards.length === 0 ? (
+              <p className="no-cards">No cards match your search.</p>
             ) : (
-              cards.map((card) => (
+              filteredCards.map((card) => (
                 <div key={card.id} className="card-item">
                   {editingCard === card.id ? (
                     <div className="card-edit">
