@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import Markdown from 'react-markdown';
 import type { CardWithState, Rating } from '../types';
 import { RATING_LABELS } from '../types';
 import * as api from '../api/client';
@@ -86,104 +87,6 @@ export function Study() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  const renderInlineFormatting = (text: string, keyPrefix: string): ReactNode[] => {
-    // Parse inline formatting into React elements (no dangerouslySetInnerHTML)
-    const result: ReactNode[] = [];
-    let remaining = text;
-    let partIndex = 0;
-
-    while (remaining.length > 0) {
-      // Find the earliest match
-      const codeMatch = remaining.match(/`([^`]+)`/);
-      const boldMatch = remaining.match(/\*\*([^*]+)\*\*/);
-      const italicMatch = remaining.match(/\*([^*]+)\*/);
-
-      const matches = [
-        codeMatch ? { type: 'code', match: codeMatch, index: codeMatch.index! } : null,
-        boldMatch ? { type: 'bold', match: boldMatch, index: boldMatch.index! } : null,
-        italicMatch ? { type: 'italic', match: italicMatch, index: italicMatch.index! } : null,
-      ].filter(Boolean).sort((a, b) => a!.index - b!.index);
-
-      if (matches.length === 0) {
-        // No more matches, add remaining text
-        if (remaining) result.push(remaining);
-        break;
-      }
-
-      const earliest = matches[0]!;
-
-      // Add text before the match
-      if (earliest.index > 0) {
-        result.push(remaining.slice(0, earliest.index));
-      }
-
-      // Add the formatted element
-      const content = earliest.match[1];
-      const key = `${keyPrefix}-${partIndex++}`;
-
-      if (earliest.type === 'code') {
-        result.push(<code key={key} className="inline-code">{content}</code>);
-      } else if (earliest.type === 'bold') {
-        result.push(<strong key={key}>{content}</strong>);
-      } else if (earliest.type === 'italic') {
-        result.push(<em key={key}>{content}</em>);
-      }
-
-      remaining = remaining.slice(earliest.index + earliest.match[0].length);
-    }
-
-    return result;
-  };
-
-  const renderMarkdown = (text: string) => {
-    // Simple markdown rendering for code blocks and basic formatting
-    const lines = text.split('\n');
-    const elements: ReactNode[] = [];
-    let inCodeBlock = false;
-    let codeContent: string[] = [];
-    let codeLanguage = '';
-
-    lines.forEach((line, i) => {
-      if (line.startsWith('```')) {
-        if (inCodeBlock) {
-          // End code block
-          elements.push(
-            <pre key={`code-${i}`} className="code-block">
-              <code className={codeLanguage ? `language-${codeLanguage}` : ''}>
-                {codeContent.join('\n')}
-              </code>
-            </pre>
-          );
-          codeContent = [];
-          codeLanguage = '';
-          inCodeBlock = false;
-        } else {
-          // Start code block
-          inCodeBlock = true;
-          codeLanguage = line.slice(3).trim();
-        }
-      } else if (inCodeBlock) {
-        codeContent.push(line);
-      } else {
-        // Handle inline code and bold/italic safely
-        elements.push(
-          <p key={i}>{renderInlineFormatting(line, `line-${i}`)}</p>
-        );
-      }
-    });
-
-    // Handle unclosed code block
-    if (inCodeBlock && codeContent.length > 0) {
-      elements.push(
-        <pre key="code-final" className="code-block">
-          <code>{codeContent.join('\n')}</code>
-        </pre>
-      );
-    }
-
-    return elements;
-  };
-
   if (loading) return <div className="study-container">Loading...</div>;
 
   const currentCard = cards[currentIndex];
@@ -222,13 +125,13 @@ export function Study() {
           <div className="flashcard-content">
             <div className="flashcard-front">
               <h3>Question</h3>
-              <div className="flashcard-text">{renderMarkdown(currentCard.front)}</div>
+              <div className="flashcard-text"><Markdown>{currentCard.front}</Markdown></div>
             </div>
 
             {showBack && (
               <div className="flashcard-back">
                 <h3>Answer</h3>
-                <div className="flashcard-text">{renderMarkdown(currentCard.back)}</div>
+                <div className="flashcard-text"><Markdown>{currentCard.back}</Markdown></div>
                 {currentCard.link && (
                   <div className="card-link-wrapper">
                     <a href={currentCard.link} target="_blank" rel="noopener noreferrer" className="card-link-btn">
