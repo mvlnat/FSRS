@@ -19,6 +19,7 @@
 
 ### Cards
 - Front/back text with markdown support
+- Fenced code blocks with language labels, line numbers, and lightweight syntax highlighting
 - Optional link field
 - Tags for categorization
 - Search by front/back content
@@ -34,7 +35,7 @@
 
 ## Project Structure
 
-```
+```text
 fsrs/
 ├── frontend/
 │   ├── src/
@@ -176,7 +177,7 @@ CREATE INDEX idx_card_tags_tag_id ON card_tags(tag_id);
 
 ## API Endpoints
 
-```
+```http
 Auth (JWT in httpOnly cookie)
 ------------------------------
 POST   /api/auth/register      { email, password }
@@ -346,7 +347,7 @@ const filteredItems = useMemo(() => {
 - Frontend as static files
 
 ### Environment Variables
-```
+```dotenv
 DATABASE_URL=postgres://...
 JWT_SECRET=<random 32 bytes>
 SECURE_COOKIES=true

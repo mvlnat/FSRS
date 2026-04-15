@@ -1035,31 +1035,141 @@ a.btn-icon:hover {
 
 /* Code Blocks */
 .code-block {
-  background: #1e1e1e;
-  color: #d4d4d4;
-  padding: 16px 20px;
-  border-radius: 12px;
+  margin: 20px 0;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+}
+
+.code-block-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(148, 163, 184, 0.08);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.code-block-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.code-block-dots span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.code-block-dots span:nth-child(1) {
+  background: #fb7185;
+}
+
+.code-block-dots span:nth-child(2) {
+  background: #fbbf24;
+}
+
+.code-block-dots span:nth-child(3) {
+  background: #34d399;
+}
+
+.code-block-language {
+  justify-self: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+button.code-block-copy {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.24);
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+button.code-block-copy:hover {
+  background: rgba(148, 163, 184, 0.16);
+  transform: none;
+}
+
+button.code-block-copy:active {
+  transform: none;
+}
+
+.code-block-body {
   overflow-x: auto;
-  margin: 12px 0;
-  text-align: left;
-  max-width: 100%;
+  padding: 14px 0;
 }
 
 .code-block code {
+  min-width: max-content;
+  padding-right: 16px;
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: pre;
   display: block;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #e2e8f0;
 }
 
-.inline-code {
-  background: var(--bg-secondary);
-  color: #d63384;
-  padding: 2px 8px;
-  border-radius: 6px;
+.code-line {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 16px;
+  padding: 0 16px;
+}
+
+.code-line-number {
+  color: #475569;
   font-family: var(--font-mono);
-  font-size: 0.9em;
+  font-size: 12px;
+  text-align: right;
+  user-select: none;
+}
+
+.code-line-content {
+  white-space: pre;
+}
+
+.code-token-comment {
+  color: #64748b;
+}
+
+.code-token-string {
+  color: #86efac;
+}
+
+.code-token-keyword {
+  color: #c4b5fd;
+}
+
+.code-token-number {
+  color: #fbbf24;
+}
+
+.code-token-function {
+  color: #7dd3fc;
+}
+
+.code-token-property {
+  color: #f9a8d4;
+}
+
+.code-token-operator {
+  color: #93c5fd;
 }
 
 /* Study Page */
@@ -1137,14 +1247,53 @@ a.btn-icon:hover {
 
 .flashcard-text {
   text-align: left;
+  color: var(--text-primary);
+}
+
+.flashcard-text > :first-child {
+  margin-top: 0;
+}
+
+.flashcard-text > :last-child {
+  margin-bottom: 0;
 }
 
 .flashcard-text p {
-  margin: 0 0 8px 0;
+  margin: 0 0 12px 0;
 }
 
 .flashcard-text p:last-child {
   margin-bottom: 0;
+}
+
+.flashcard-text ul,
+.flashcard-text ol {
+  margin: 0 0 16px 0;
+  padding-left: 24px;
+}
+
+.flashcard-text li + li {
+  margin-top: 8px;
+}
+
+.flashcard-text blockquote {
+  margin: 16px 0;
+  padding-left: 16px;
+  border-left: 3px solid rgba(0, 113, 227, 0.2);
+  color: var(--text-secondary);
+}
+
+.flashcard-text p code,
+.flashcard-text li code,
+.flashcard-text blockquote code {
+  background: linear-gradient(180deg, rgba(0, 113, 227, 0.08) 0%, rgba(0, 113, 227, 0.14) 100%);
+  border: 1px solid rgba(0, 113, 227, 0.14);
+  color: #0f3d78;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  font-weight: 500;
 }
 
 .flashcard-back {
@@ -1307,6 +1456,29 @@ a.btn-icon:hover {
   .flashcard-front p,
   .flashcard-back p {
     font-size: 19px;
+  }
+
+  .code-block-header {
+    grid-template-columns: auto 1fr;
+  }
+
+  .code-block-language {
+    justify-self: start;
+  }
+
+  button.code-block-copy {
+    justify-self: end;
+    grid-column: 2;
+  }
+
+  .code-line {
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 12px;
+    padding: 0 12px;
+  }
+
+  .code-block code {
+    font-size: 13px;
   }
 
   .ratings {
