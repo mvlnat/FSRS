@@ -57,6 +57,8 @@ fsrs/
 │   │   │   └── Study.tsx        # Flashcard review
 │   │   ├── types/
 │   │   │   └── index.ts
+│   │   ├── test/
+│   │   │   └── setup.ts        # Vitest + Testing Library setup
 │   │   ├── App.tsx              # Routes & layout
 │   │   └── App.css              # All styles
 │   ├── package.json
@@ -367,6 +369,9 @@ CORS_ORIGINS=https://fsrs.ziyang.li
 ```bash
 # Backend unit tests
 cd backend && go test ./internal/...
+
+# Frontend unit tests
+cd frontend && npm run test
 
 # Frontend type check
 cd frontend && npm run build
