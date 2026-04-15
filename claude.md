@@ -19,17 +19,41 @@ docker build --platform linux/amd64 -t fsrs-backend -f backend/Dockerfile ./back
 docker build --platform linux/amd64 -t fsrs-frontend -f frontend/Dockerfile ./frontend
 ```
 
-### Deploy to Droplet
+### Deploy to Droplet (Full Steps)
+
+**Step 1: Build for amd64**
 ```bash
-# Save images
-docker save fsrs-backend | gzip > /tmp/fsrs-backend.tar.gz
-docker save fsrs-frontend | gzip > /tmp/fsrs-frontend.tar.gz
+docker build --platform linux/amd64 -t fsrs-backend -f backend/Dockerfile ./backend
+docker build --platform linux/amd64 -t fsrs-frontend -f frontend/Dockerfile ./frontend
+```
 
-# Upload to server
+**Step 2: Save and upload**
+```bash
+docker save fsrs-backend:latest | gzip > /tmp/fsrs-backend.tar.gz
+docker save fsrs-frontend:latest | gzip > /tmp/fsrs-frontend.tar.gz
 scp /tmp/fsrs-backend.tar.gz /tmp/fsrs-frontend.tar.gz root@161.35.3.230:/root/
+```
 
-# Load and restart on server (use down/up for full image refresh)
+**Step 3: Load and restart on server**
+```bash
 ssh root@161.35.3.230 "gunzip -c /root/fsrs-backend.tar.gz | docker load && gunzip -c /root/fsrs-frontend.tar.gz | docker load && cd /root/fsrs && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up -d"
+```
+
+**Step 4: Verify deployment**
+```bash
+# Check containers are running with correct images
+ssh root@161.35.3.230 "docker ps && docker inspect --format='{{.Name}}: {{.Image}}' fsrs-backend-1 fsrs-frontend-1"
+
+# Clean up old images
+ssh root@161.35.3.230 "docker image prune -f"
+
+# Test site responds
+curl -s -o /dev/null -w "%{http_code}" https://fsrs.ziyang.li/
+```
+
+**One-liner (after building)**
+```bash
+docker save fsrs-backend:latest | gzip > /tmp/fsrs-backend.tar.gz && docker save fsrs-frontend:latest | gzip > /tmp/fsrs-frontend.tar.gz && scp /tmp/fsrs-backend.tar.gz /tmp/fsrs-frontend.tar.gz root@161.35.3.230:/root/ && ssh root@161.35.3.230 "gunzip -c /root/fsrs-backend.tar.gz | docker load && gunzip -c /root/fsrs-frontend.tar.gz | docker load && cd /root/fsrs && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up -d && docker image prune -f"
 ```
 
 ## Server Info
