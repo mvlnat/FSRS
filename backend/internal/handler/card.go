@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -130,7 +131,7 @@ func (h *CardHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Front == "" || req.Back == "" {
+	if strings.TrimSpace(req.Front) == "" || strings.TrimSpace(req.Back) == "" {
 		http.Error(w, "Front and back are required", http.StatusBadRequest)
 		return
 	}
@@ -221,6 +222,11 @@ func (h *CardHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var req createCardRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if strings.TrimSpace(req.Front) == "" || strings.TrimSpace(req.Back) == "" {
+		http.Error(w, "Front and back are required", http.StatusBadRequest)
 		return
 	}
 

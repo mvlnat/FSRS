@@ -19,11 +19,11 @@ function getStudyStatsSummary(stats: api.StudyStats): string {
   const reviewNoun = stats.totalReviews === 1 ? 'review' : 'reviews';
   const formattedTotal = formatReviewCount(stats.totalReviews);
 
-  if (stats.totalReviews === stats.reviewsToday) {
-    return `All ${formattedTotal} recorded ${reviewNoun} happened today.`;
+  if (stats.totalReviews === stats.reviewsLast24Hours) {
+    return `All ${formattedTotal} recorded ${reviewNoun} happened in the last 24 hours.`;
   }
 
-  if (stats.totalReviews === stats.reviewsThisWeek) {
+  if (stats.totalReviews === stats.reviewsLast7Days) {
     return `All ${formattedTotal} recorded ${reviewNoun} are from the last 7 days.`;
   }
 
@@ -152,11 +152,11 @@ export function Decks() {
           </div>
           <div className="stats-grid">
             <div className="stat-item">
-              <span className="stat-value">{formatReviewCount(stats.reviewsToday)}</span>
-              <span className="stat-label">Reviews Today</span>
+              <span className="stat-value">{formatReviewCount(stats.reviewsLast24Hours)}</span>
+              <span className="stat-label">Last 24 Hours</span>
             </div>
             <div className="stat-item">
-              <span className="stat-value">{formatReviewCount(stats.reviewsThisWeek)}</span>
+              <span className="stat-value">{formatReviewCount(stats.reviewsLast7Days)}</span>
               <span className="stat-label">Last 7 Days</span>
             </div>
             <div className="stat-item">

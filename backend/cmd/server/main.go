@@ -68,6 +68,7 @@ func main() {
 	authMiddleware := middleware.NewAuthMiddleware(jwtSecret)
 	// 10 requests per minute for auth endpoints
 	authRateLimiter := middleware.NewRateLimiter(10, time.Minute)
+	authRateLimiter.SetTrustProxy(os.Getenv("TRUST_PROXY_HEADERS") == "true")
 
 	// Setup router
 	r := chi.NewRouter()

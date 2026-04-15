@@ -362,6 +362,7 @@ export function Study() {
   const [completed, setCompleted] = useState(0);
   const [totalInSession, setTotalInSession] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [submitting, setSubmitting] = useState(false);
 
   const loadCards = useCallback(async (isInitial = false) => {
     if (!deckId) return;
@@ -416,9 +417,10 @@ export function Study() {
 
   const handleRating = useCallback(async (rating: Rating) => {
     const [card, ...remainingCards] = cards;
-    if (!card) return;
+    if (!card || submitting) return;
 
     try {
+      setSubmitting(true);
       const nextState = await api.reviewCard(card.id, rating);
       setCompleted(c => c + 1);
       setCards(remainingCards);
@@ -442,8 +444,10 @@ export function Study() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit review');
+    } finally {
+      setSubmitting(false);
     }
-  }, [cards, deckId]);
+  }, [cards, deckId, submitting]);
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -453,7 +457,7 @@ export function Study() {
     }
 
     const currentCard = cards[0];
-    if (!currentCard || loading) return;
+    if (!currentCard || loading || submitting) return;
 
     if (e.code === 'Space') {
       e.preventDefault();
@@ -464,7 +468,7 @@ export function Study() {
       e.preventDefault();
       handleRating(parseInt(e.key) as Rating);
     }
-  }, [cards, showBack, loading, handleRating]);
+  }, [cards, showBack, loading, submitting, handleRating]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -555,8 +559,9 @@ export function Study() {
                     key={rating}
                     onClick={() => handleRating(rating)}
                     className={`rating-btn rating-${rating}`}
+                    disabled={submitting}
                   >
-                    <span className="shortcut-hint">{rating}</span> {RATING_LABELS[rating]}
+                    <span className="shortcut-hint">{rating}</span> {submitting ? 'Submitting...' : RATING_LABELS[rating]}
                   </button>
                 ))}
               </div>

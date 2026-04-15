@@ -148,8 +148,8 @@ export async function reviewCard(cardId: string, rating: number): Promise<CardSt
 // Study Stats
 export interface StudyStats {
   totalReviews: number;
-  reviewsToday: number;
-  reviewsThisWeek: number;
+  reviewsLast24Hours: number;
+  reviewsLast7Days: number;
   avgRating: number;
   retentionRate: number;
 }

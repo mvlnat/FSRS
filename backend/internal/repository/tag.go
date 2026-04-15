@@ -50,6 +50,31 @@ func (r *TagRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Tag, 
 	return tag, nil
 }
 
+func (r *TagRepository) GetByIDs(ctx context.Context, ids []uuid.UUID) ([]model.Tag, error) {
+	if len(ids) == 0 {
+		return []model.Tag{}, nil
+	}
+
+	rows, err := r.db.Pool.Query(ctx,
+		`SELECT id, deck_id, name, created_at FROM tags WHERE id = ANY($1)`,
+		ids,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tags []model.Tag
+	for rows.Next() {
+		var t model.Tag
+		if err := rows.Scan(&t.ID, &t.DeckID, &t.Name, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		tags = append(tags, t)
+	}
+	return tags, rows.Err()
+}
+
 func (r *TagRepository) ListByDeck(ctx context.Context, deckID uuid.UUID) ([]model.Tag, error) {
 	rows, err := r.db.Pool.Query(ctx,
 		`SELECT id, deck_id, name, created_at FROM tags WHERE deck_id = $1 ORDER BY name ASC`,

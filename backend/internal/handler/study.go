@@ -118,26 +118,17 @@ func (h *StudyHandler) Review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get current card state or create new one
-	currentState, err := h.cardRepo.GetStateByCardID(r.Context(), cardID)
-	if err == repository.ErrNotFound {
-		currentState = h.fsrsService.NewCardState(cardID)
-	} else if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	newState, err := h.cardRepo.ApplyReview(r.Context(), cardID, req.Rating, func(currentState *model.CardState) *model.CardState {
+		if currentState == nil {
+			currentState = h.fsrsService.NewCardState(cardID)
+		}
+		return h.fsrsService.Review(currentState, req.Rating)
+	})
+	if err == repository.ErrCardNotDue {
+		http.Error(w, "Card is not due yet", http.StatusConflict)
 		return
 	}
-
-	// Apply FSRS algorithm
-	newState := h.fsrsService.Review(currentState, req.Rating)
-
-	// Save the new state
-	if err := h.cardRepo.UpsertState(r.Context(), newState); err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	// Log the review
-	if _, err := h.cardRepo.CreateReview(r.Context(), cardID, req.Rating); err != nil {
+	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}

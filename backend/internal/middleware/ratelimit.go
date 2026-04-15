@@ -9,11 +9,11 @@ import (
 )
 
 type RateLimiter struct {
-	requests       map[string][]time.Time
-	mu             sync.Mutex
-	limit          int
-	window         time.Duration
-	trustProxy     bool // Only trust X-Forwarded-For when behind a known proxy
+	requests   map[string][]time.Time
+	mu         sync.Mutex
+	limit      int
+	window     time.Duration
+	trustProxy bool // Only trust proxy-provided client IP headers when explicitly enabled
 }
 
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
@@ -21,14 +21,14 @@ func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 		requests:   make(map[string][]time.Time),
 		limit:      limit,
 		window:     window,
-		trustProxy: true, // Enable by default for reverse proxy setups (nginx)
+		trustProxy: false,
 	}
 	// Cleanup old entries periodically
 	go rl.cleanup()
 	return rl
 }
 
-// SetTrustProxy configures whether to trust X-Forwarded-For header
+// SetTrustProxy configures whether to trust proxy-provided client IP headers.
 func (rl *RateLimiter) SetTrustProxy(trust bool) {
 	rl.trustProxy = trust
 }
@@ -84,27 +84,13 @@ func (rl *RateLimiter) Handler(next http.Handler) http.Handler {
 	})
 }
 
-// getClientIP extracts the client IP address from the request
+// getClientIP extracts the client IP address from the request.
+// When proxy trust is enabled, prefer X-Real-IP from the reverse proxy.
 func (rl *RateLimiter) getClientIP(r *http.Request) string {
-	// Only trust proxy headers if configured to do so
 	if rl.trustProxy {
-		// X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
-		// The first one is the original client
-		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			// Take only the first IP (the original client)
-			if idx := strings.Index(forwarded, ","); idx != -1 {
-				forwarded = strings.TrimSpace(forwarded[:idx])
-			}
-			// Validate it looks like an IP address
-			if parsedIP := net.ParseIP(forwarded); parsedIP != nil {
-				return forwarded
-			}
-		}
-
-		// Also check X-Real-IP (set by nginx)
-		if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
 			if parsedIP := net.ParseIP(realIP); parsedIP != nil {
-				return realIP
+				return parsedIP.String()
 			}
 		}
 	}

@@ -31,9 +31,10 @@
 - Keyboard shortcuts (Space to flip, 1-4 for ratings)
 - Progress bar
 - Session statistics
-- Dashboard study snapshot with today, last 7 days, average rating, and retention
+- Dashboard study snapshot with rolling last 24 hours, rolling last 7 days, average rating, and retention
 - Short learning steps stay in the study session and return when due
 - When the visible queue runs out, the session pulls any newly due cards without requiring a manual refresh
+- Review submissions are accepted only for due cards, with per-card locking to prevent duplicate reviews from double clicks or key repeats
 
 ---
 
@@ -46,15 +47,18 @@ fsrs/
 │   │   ├── api/
 │   │   │   └── client.ts        # API functions
 │   │   ├── hooks/
-│   │   │   ├── AuthProvider.tsx # Auth provider
-│   │   │   ├── auth-context.ts  # Auth context types and object
-│   │   │   └── useAuth.tsx      # Auth hook
+│   │   │   ├── AuthProvider.tsx      # Auth provider
+│   │   │   ├── AuthProvider.test.tsx
+│   │   │   ├── auth-context.ts       # Auth context types and object
+│   │   │   └── useAuth.tsx           # Auth hook
 │   │   ├── pages/
 │   │   │   ├── Login.tsx
 │   │   │   ├── Register.tsx
 │   │   │   ├── Decks.tsx        # Deck list with stats
-│   │   │   ├── DeckEdit.tsx     # Cards, tags, settings
-│   │   │   └── Study.tsx        # Flashcard review
+│   │   │   ├── DeckEdit.tsx          # Cards, tags, settings
+│   │   │   ├── DeckEdit.test.tsx
+│   │   │   ├── Study.tsx             # Flashcard review
+│   │   │   └── Study.test.tsx
 │   │   ├── types/
 │   │   │   └── index.ts
 │   │   ├── test/
@@ -81,7 +85,7 @@ fsrs/
 │   │   │   ├── tag.go
 │   │   │   └── review.go
 │   │   ├── repository/
-│   │   │   ├── db.go
+│   │   │   ├── postgres.go
 │   │   │   ├── user.go
 │   │   │   ├── deck.go
 │   │   │   ├── card.go
@@ -95,7 +99,6 @@ fsrs/
 │   └── Dockerfile
 │
 ├── docker-compose.yml
-├── docker-compose.prod.yml
 ├── nginx.conf
 ├── claude.md                    # Development guidelines
 └── design.md                    # This file
@@ -307,7 +310,8 @@ const filteredItems = useMemo(() => {
 - Rate limiting on auth endpoints (10 req/min)
 - Request body size limits (10MB)
 - JWT algorithm validation (prevent alg:none)
-- X-Forwarded-For first-IP-only (prevent spoofing)
+- Rate limiter only trusts proxy-set `X-Real-IP` when `TRUST_PROXY_HEADERS=true`
+- Card tag updates only accept tags from the same deck as the card
 - Content-Disposition header sanitization
 - All queries parameterized (SQL injection prevention)
 
@@ -359,6 +363,7 @@ const filteredItems = useMemo(() => {
 DATABASE_URL=postgres://...
 JWT_SECRET=<random 32 bytes>
 SECURE_COOKIES=true
+TRUST_PROXY_HEADERS=true
 CORS_ORIGINS=https://fsrs.ziyang.li
 ```
 
@@ -375,6 +380,9 @@ cd frontend && npm run test
 
 # Frontend type check
 cd frontend && npm run build
+
+# Optional backend integration tests (requires local fsrs_test Postgres)
+cd backend && go test -tags=integration ./internal/handler/...
 ```
 
 ---

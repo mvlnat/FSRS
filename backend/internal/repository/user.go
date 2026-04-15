@@ -11,6 +11,7 @@ import (
 
 var ErrNotFound = errors.New("not found")
 var ErrDuplicate = errors.New("duplicate entry")
+var ErrCardNotDue = errors.New("card not due")
 
 type UserRepository struct {
 	db *DB

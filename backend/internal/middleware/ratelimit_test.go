@@ -68,27 +68,57 @@ func TestRateLimiter_DifferentIPs(t *testing.T) {
 	}
 }
 
-func TestRateLimiter_XForwardedFor(t *testing.T) {
+func TestRateLimiter_TrustedProxyUsesXRealIP(t *testing.T) {
 	rl := NewRateLimiter(1, time.Second)
+	rl.SetTrustProxy(true)
 
 	handler := rl.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// First request with X-Forwarded-For
+	// First request with proxy-provided client IP
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
-	req.Header.Set("X-Forwarded-For", "10.0.0.1")
+	req.Header.Set("X-Real-IP", "10.0.0.1")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Errorf("1st request: got status %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	// Second request from same X-Forwarded-For should be rate limited
+	// Second request from same client IP should be rate limited
 	req = httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
-	req.Header.Set("X-Forwarded-For", "10.0.0.1")
+	req.Header.Set("X-Real-IP", "10.0.0.1")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("2nd request: got status %d, want %d", rec.Code, http.StatusTooManyRequests)
+	}
+}
+
+func TestRateLimiter_IgnoresSpoofedXForwardedFor(t *testing.T) {
+	rl := NewRateLimiter(1, time.Second)
+	rl.SetTrustProxy(true)
+
+	handler := rl.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Header.Set("X-Real-IP", "10.0.0.1")
+	req.Header.Set("X-Forwarded-For", "198.51.100.10")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("1st request: got status %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Header.Set("X-Real-IP", "10.0.0.1")
+	req.Header.Set("X-Forwarded-For", "203.0.113.20")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusTooManyRequests {

@@ -220,13 +220,36 @@ func (h *TagHandler) SetCardTags(w http.ResponseWriter, r *http.Request) {
 
 	// Parse tag IDs
 	tagIDs := make([]uuid.UUID, 0, len(req.TagIDs))
+	seenTagIDs := make(map[uuid.UUID]struct{}, len(req.TagIDs))
 	for _, idStr := range req.TagIDs {
 		id, err := uuid.Parse(idStr)
 		if err != nil {
 			http.Error(w, "Invalid tag ID", http.StatusBadRequest)
 			return
 		}
+		if _, seen := seenTagIDs[id]; seen {
+			continue
+		}
+		seenTagIDs[id] = struct{}{}
 		tagIDs = append(tagIDs, id)
+	}
+
+	if len(tagIDs) > 0 {
+		tags, err := h.tagRepo.GetByIDs(r.Context(), tagIDs)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if len(tags) != len(tagIDs) {
+			http.Error(w, "Invalid tag ID", http.StatusBadRequest)
+			return
+		}
+		for _, tag := range tags {
+			if tag.DeckID != card.DeckID {
+				http.Error(w, "Tags must belong to the same deck as the card", http.StatusBadRequest)
+				return
+			}
+		}
 	}
 
 	if err := h.tagRepo.SetCardTags(r.Context(), cardID, tagIDs); err != nil {

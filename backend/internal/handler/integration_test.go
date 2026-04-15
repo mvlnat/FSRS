@@ -90,6 +90,7 @@ func setupTestSchema(ctx context.Context) error {
 			deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
 			front TEXT NOT NULL,
 			back TEXT NOT NULL,
+			link TEXT DEFAULT '',
 			created_at TIMESTAMPTZ DEFAULT NOW()
 		);
 
@@ -155,6 +156,7 @@ func setupTestRouter() *chi.Mux {
 	deckHandler := handler.NewDeckHandler(deckRepo, cardRepo)
 	cardHandler := handler.NewCardHandler(cardRepo, deckRepo, tagRepo)
 	studyHandler := handler.NewStudyHandler(cardRepo, deckRepo, fsrsService)
+	tagHandler := handler.NewTagHandler(tagRepo, deckRepo, cardRepo)
 
 	authMiddleware := middleware.NewAuthMiddleware(testJWTSecret)
 
@@ -184,6 +186,11 @@ func setupTestRouter() *chi.Mux {
 		r.Get("/api/cards/{id}", cardHandler.Get)
 		r.Put("/api/cards/{id}", cardHandler.Update)
 		r.Delete("/api/cards/{id}", cardHandler.Delete)
+
+		r.Get("/api/decks/{deckId}/tags", tagHandler.ListByDeck)
+		r.Post("/api/decks/{deckId}/tags", tagHandler.Create)
+		r.Delete("/api/tags/{tagId}", tagHandler.Delete)
+		r.Put("/api/cards/{cardId}/tags", tagHandler.SetCardTags)
 
 		r.Get("/api/study/stats", studyHandler.GetStats)
 		r.Get("/api/study/{deckId}", studyHandler.GetDueCards)
@@ -553,6 +560,246 @@ func TestIntegration_EditCardResetsStudyProgress(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&dueCards)
 	if len(dueCards) != 1 || dueCards[0].ID != card.ID {
 		t.Fatalf("expected edited card to be due again immediately, got %#v", dueCards)
+	}
+}
+
+func TestIntegration_ReviewRejectsCardThatIsNotDue(t *testing.T) {
+	body := `{"email":"repeat-review@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	authCookie := rec.Result().Cookies()[0]
+
+	body = `{"name":"Review Guard Deck","description":""}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&deck)
+
+	body = `{"front":"Guard question","back":"Guard answer"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var card struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&card)
+
+	body = `{"rating":4}`
+	req = httptest.NewRequest(http.MethodPost, "/api/study/"+card.ID+"/review", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first review: got status %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/study/"+card.ID+"/review", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("second review: got status %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+}
+
+func TestIntegration_SetCardTagsRejectsTagsFromAnotherDeck(t *testing.T) {
+	body := `{"email":"tag-scope@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	authCookie := rec.Result().Cookies()[0]
+
+	body = `{"name":"Deck One","description":""}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deckOne struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&deckOne)
+
+	body = `{"name":"Deck Two","description":""}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deckTwo struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&deckTwo)
+
+	body = `{"front":"Tagged question","back":"Tagged answer"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deckOne.ID+"/cards", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var card struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&card)
+
+	body = `{"name":"Wrong Deck Tag"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deckTwo.ID+"/tags", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var tag struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&tag)
+
+	body = `{"tag_ids":["` + tag.ID + `"]}`
+	req = httptest.NewRequest(http.MethodPut, "/api/cards/"+card.ID+"/tags", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("set card tags: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestIntegration_UpdateCardRejectsBlankContent(t *testing.T) {
+	body := `{"email":"blank-card@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	authCookie := rec.Result().Cookies()[0]
+
+	body = `{"name":"Validation Deck","description":""}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&deck)
+
+	body = `{"front":"Original","back":"Answer"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var card struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&card)
+
+	body = `{"front":"   ","back":"Still there","link":""}`
+	req = httptest.NewRequest(http.MethodPut, "/api/cards/"+card.ID, bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("update card: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestIntegration_StudyStatsUseRollingWindows(t *testing.T) {
+	body := `{"email":"rolling-stats@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	authCookie := rec.Result().Cookies()[0]
+
+	body = `{"name":"Stats Deck","description":""}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&deck)
+
+	body = `{"front":"Stats question","back":"Stats answer"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var card struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&card)
+
+	if _, err := testDB.Pool.Exec(context.Background(), `
+		INSERT INTO reviews (card_id, rating, reviewed_at) VALUES
+			($1, 4, NOW() - INTERVAL '23 hours'),
+			($1, 3, NOW() - INTERVAL '6 days 23 hours'),
+			($1, 2, NOW() - INTERVAL '8 days')
+	`, card.ID); err != nil {
+		t.Fatalf("seed reviews: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/study/stats", nil)
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get rolling stats: got status %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var stats struct {
+		TotalReviews       int `json:"totalReviews"`
+		ReviewsLast24Hours int `json:"reviewsLast24Hours"`
+		ReviewsLast7Days   int `json:"reviewsLast7Days"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&stats); err != nil {
+		t.Fatalf("decode stats: %v", err)
+	}
+
+	if stats.TotalReviews != 3 {
+		t.Fatalf("total reviews = %d, want 3", stats.TotalReviews)
+	}
+	if stats.ReviewsLast24Hours != 1 {
+		t.Fatalf("reviewsLast24Hours = %d, want 1", stats.ReviewsLast24Hours)
+	}
+	if stats.ReviewsLast7Days != 2 {
+		t.Fatalf("reviewsLast7Days = %d, want 2", stats.ReviewsLast7Days)
 	}
 }
 
