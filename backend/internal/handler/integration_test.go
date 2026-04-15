@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package handler_test
@@ -23,8 +24,8 @@ import (
 // Run with: go test -tags=integration ./internal/handler/...
 
 var (
-	testDB       *repository.DB
-	testRouter   *chi.Mux
+	testDB        *repository.DB
+	testRouter    *chi.Mux
 	testJWTSecret = "test-jwt-secret-for-integration"
 )
 
@@ -106,13 +107,27 @@ func setupTestSchema(ctx context.Context) error {
 			last_review TIMESTAMPTZ
 		);
 
-		CREATE TABLE reviews (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-			rating INT NOT NULL CHECK (rating >= 1 AND rating <= 4),
-			reviewed_at TIMESTAMPTZ DEFAULT NOW()
-		);
-	`
+			CREATE TABLE reviews (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+				rating INT NOT NULL CHECK (rating >= 1 AND rating <= 4),
+				reviewed_at TIMESTAMPTZ DEFAULT NOW()
+			);
+
+			CREATE TABLE tags (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+				name VARCHAR(100) NOT NULL,
+				created_at TIMESTAMPTZ DEFAULT NOW(),
+				UNIQUE(deck_id, name)
+			);
+
+			CREATE TABLE card_tags (
+				card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+				tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+				PRIMARY KEY (card_id, tag_id)
+			);
+		`
 	_, err := testDB.Pool.Exec(ctx, migration)
 	return err
 }
@@ -121,6 +136,8 @@ func cleanupTestDB(ctx context.Context) {
 	testDB.Pool.Exec(ctx, `
 		DROP TABLE IF EXISTS reviews CASCADE;
 		DROP TABLE IF EXISTS card_states CASCADE;
+		DROP TABLE IF EXISTS card_tags CASCADE;
+		DROP TABLE IF EXISTS tags CASCADE;
 		DROP TABLE IF EXISTS cards CASCADE;
 		DROP TABLE IF EXISTS decks CASCADE;
 		DROP TABLE IF EXISTS users CASCADE;
@@ -131,11 +148,12 @@ func setupTestRouter() *chi.Mux {
 	userRepo := repository.NewUserRepository(testDB)
 	deckRepo := repository.NewDeckRepository(testDB)
 	cardRepo := repository.NewCardRepository(testDB)
+	tagRepo := repository.NewTagRepository(testDB)
 	fsrsService := service.NewFSRSService()
 
 	authHandler := handler.NewAuthHandler(userRepo, testJWTSecret, false)
 	deckHandler := handler.NewDeckHandler(deckRepo, cardRepo)
-	cardHandler := handler.NewCardHandler(cardRepo, deckRepo)
+	cardHandler := handler.NewCardHandler(cardRepo, deckRepo, tagRepo)
 	studyHandler := handler.NewStudyHandler(cardRepo, deckRepo, fsrsService)
 
 	authMiddleware := middleware.NewAuthMiddleware(testJWTSecret)
@@ -163,6 +181,9 @@ func setupTestRouter() *chi.Mux {
 
 		r.Get("/api/decks/{id}/cards", cardHandler.ListByDeck)
 		r.Post("/api/decks/{id}/cards", cardHandler.Create)
+		r.Get("/api/cards/{id}", cardHandler.Get)
+		r.Put("/api/cards/{id}", cardHandler.Update)
+		r.Delete("/api/cards/{id}", cardHandler.Delete)
 
 		r.Get("/api/study/stats", studyHandler.GetStats)
 		r.Get("/api/study/{deckId}", studyHandler.GetDueCards)
@@ -428,6 +449,110 @@ func TestIntegration_StudyFlow(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&stats)
 	if stats.TotalReviews != 1 {
 		t.Errorf("expected 1 total review, got %d", stats.TotalReviews)
+	}
+}
+
+func TestIntegration_EditCardResetsStudyProgress(t *testing.T) {
+	// Register
+	body := `{"email":"edit-card@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	cookies := rec.Result().Cookies()
+	var authCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == "token" {
+			authCookie = c
+			break
+		}
+	}
+
+	// Create deck
+	body = `{"name":"Editable Deck","description":""}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&deck)
+
+	// Create card
+	body = `{"front":"Original front","back":"Original back"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var card struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&card)
+
+	// Review once to create state and review history
+	body = `{"rating":3}`
+	req = httptest.NewRequest(http.MethodPost, "/api/study/"+card.ID+"/review", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("review card: got status %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	// Edit the card, which should reset scheduling and review history
+	body = `{"front":"Updated front","back":"Updated back","link":"https://example.com"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/cards/"+card.ID, bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update card: got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	// Stats should be reset because prior reviews are no longer relevant
+	req = httptest.NewRequest(http.MethodGet, "/api/study/stats", nil)
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get stats after edit: got status %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var stats struct {
+		TotalReviews int `json:"totalReviews"`
+	}
+	json.NewDecoder(rec.Body).Decode(&stats)
+	if stats.TotalReviews != 0 {
+		t.Fatalf("expected reviews to reset after edit, got %d", stats.TotalReviews)
+	}
+
+	// The edited card should behave like a new card and be due immediately again
+	req = httptest.NewRequest(http.MethodGet, "/api/study/"+deck.ID, nil)
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get due cards after edit: got status %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var dueCards []struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&dueCards)
+	if len(dueCards) != 1 || dueCards[0].ID != card.ID {
+		t.Fatalf("expected edited card to be due again immediately, got %#v", dueCards)
 	}
 }
 

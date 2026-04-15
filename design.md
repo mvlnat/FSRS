@@ -21,6 +21,7 @@
 - Front/back text with markdown support
 - Fenced code blocks with language labels, line numbers, and lightweight syntax highlighting
 - Optional link field
+- Editing a card resets its FSRS schedule and review history
 - Tags for categorization
 - Search by front/back content
 - Sort by date, alphabetical, review count
@@ -31,6 +32,7 @@
 - Progress bar
 - Session statistics
 - Dashboard study snapshot with today, last 7 days, average rating, and retention
+- Short learning steps stay in the study session and return when due
 
 ---
 

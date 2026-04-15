@@ -101,8 +101,14 @@ func (r *CardRepository) ListByDeck(ctx context.Context, deckID uuid.UUID) ([]mo
 }
 
 func (r *CardRepository) Update(ctx context.Context, id uuid.UUID, front, back, link string) (*model.Card, error) {
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
 	card := &model.Card{}
-	err := r.db.Pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`UPDATE cards SET front = $2, back = $3, link = $4 WHERE id = $1
 		 RETURNING id, deck_id, front, back, link, created_at`,
 		id, front, back, link,
@@ -114,6 +120,20 @@ func (r *CardRepository) Update(ctx context.Context, id uuid.UUID, front, back, 
 	if err != nil {
 		return nil, err
 	}
+
+	// Editing card content invalidates prior scheduling and review history.
+	if _, err := tx.Exec(ctx, `DELETE FROM card_states WHERE card_id = $1`, id); err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM reviews WHERE card_id = $1`, id); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
 	return card, nil
 }
 

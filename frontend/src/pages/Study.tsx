@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import type { Components } from 'react-markdown';
-import type { CardWithState, Rating } from '../types';
+import type { CardState, CardWithState, Rating } from '../types';
 import { RATING_LABELS } from '../types';
 import * as api from '../api/client';
 
@@ -17,6 +17,11 @@ type HighlightToken = {
 type CodeElementProps = {
   className?: string;
   children?: ReactNode;
+};
+
+type PendingReview = {
+  card: CardWithState;
+  dueAt: number;
 };
 
 const LANGUAGE_ALIASES: Record<string, string> = {
@@ -326,27 +331,50 @@ const markdownComponents: Components = {
   },
 };
 
+function shouldRequeueLearningCard(state: CardState): boolean {
+  return state.scheduled_days === 0 && (state.state === 1 || state.state === 3);
+}
+
+function enqueuePendingReview(queue: PendingReview[], entry: PendingReview): PendingReview[] {
+  return [...queue, entry].sort((a, b) => a.dueAt - b.dueAt);
+}
+
+function formatCountdown(ms: number): string {
+  const totalSeconds = Math.max(1, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes === 0) {
+    return `${seconds}s`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 export function Study() {
   const { deckId } = useParams<{ deckId: string }>();
   const navigate = useNavigate();
   const [cards, setCards] = useState<CardWithState[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [pendingReviews, setPendingReviews] = useState<PendingReview[]>([]);
   const [showBack, setShowBack] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [completed, setCompleted] = useState(0);
   const [totalInSession, setTotalInSession] = useState(0);
+  const [now, setNow] = useState(Date.now());
 
   const loadCards = useCallback(async (isInitial = false) => {
     if (!deckId) return;
     try {
       const data = await api.getDueCards(deckId);
       setCards(data);
-      setCurrentIndex(0);
       setShowBack(false);
       if (isInitial && data.length > 0) {
         setTotalInSession(data.length);
         setCompleted(0);
+      }
+      if (isInitial) {
+        setPendingReviews([]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load cards');
@@ -359,28 +387,62 @@ export function Study() {
     if (deckId) loadCards(true);
   }, [deckId, loadCards]);
 
+  useEffect(() => {
+    if (pendingReviews.length === 0) return;
+
+    const intervalId = window.setInterval(() => {
+      const currentTime = Date.now();
+      setNow(currentTime);
+
+      setPendingReviews((queue) => {
+        const dueNow = queue.filter((entry) => entry.dueAt <= currentTime);
+        if (dueNow.length === 0) {
+          return queue;
+        }
+
+        setCards((currentCards) => {
+          const existingIds = new Set(currentCards.map((card) => card.id));
+          const newlyDueCards = dueNow
+            .map((entry) => entry.card)
+            .filter((card) => !existingIds.has(card.id));
+
+          return newlyDueCards.length > 0 ? [...currentCards, ...newlyDueCards] : currentCards;
+        });
+
+        return queue.filter((entry) => entry.dueAt > currentTime);
+      });
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [pendingReviews.length]);
+
   const handleRating = useCallback(async (rating: Rating) => {
-    const card = cards[currentIndex];
+    const [card, ...remainingCards] = cards;
     if (!card) return;
 
     try {
-      await api.reviewCard(card.id, rating);
+      const nextState = await api.reviewCard(card.id, rating);
       setCompleted(c => c + 1);
+      setCards(remainingCards);
+      setShowBack(false);
+      setError('');
 
-      // Move to next card
-      if (currentIndex < cards.length - 1) {
-        setCurrentIndex(i => i + 1);
-        setShowBack(false);
-      } else {
-        // Session complete - reload to get any new due cards
-        setLoading(true);
-        await loadCards();
-        setLoading(false);
+      if (shouldRequeueLearningCard(nextState)) {
+        setPendingReviews((queue) => enqueuePendingReview(queue, {
+          card: { ...card, state: nextState },
+          dueAt: new Date(nextState.due).getTime(),
+        }));
+        setTotalInSession((count) => count + 1);
+      }
+
+      if (remainingCards.length === 0 && !shouldRequeueLearningCard(nextState)) {
+        const freshDueCards = await api.getDueCards(deckId!);
+        setCards(freshDueCards);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit review');
     }
-  }, [cards, currentIndex, loadCards]);
+  }, [cards, deckId]);
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -389,7 +451,7 @@ export function Study() {
       return;
     }
 
-    const currentCard = cards[currentIndex];
+    const currentCard = cards[0];
     if (!currentCard || loading) return;
 
     if (e.code === 'Space') {
@@ -401,7 +463,7 @@ export function Study() {
       e.preventDefault();
       handleRating(parseInt(e.key) as Rating);
     }
-  }, [cards, currentIndex, showBack, loading, handleRating]);
+  }, [cards, showBack, loading, handleRating]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -410,8 +472,11 @@ export function Study() {
 
   if (loading) return <div className="study-container">Loading...</div>;
 
-  const currentCard = cards[currentIndex];
-  const isComplete = !currentCard || cards.length === 0;
+  const currentCard = cards[0];
+  const nextPendingReview = pendingReviews[0];
+  const isWaiting = !currentCard && pendingReviews.length > 0;
+  const isComplete = !currentCard && pendingReviews.length === 0;
+  const nextReviewCountdown = nextPendingReview ? formatCountdown(nextPendingReview.dueAt - now) : null;
 
   return (
     <div className="study-container">
@@ -432,10 +497,18 @@ export function Study() {
 
       <div className="study-progress">
         <span>Completed: {completed}/{totalInSession}</span>
-        <span>Remaining: {cards.length - currentIndex}</span>
+        <span>Due Now: {cards.length}</span>
+        <span>Learning Queue: {pendingReviews.length}</span>
       </div>
 
-      {isComplete ? (
+      {isWaiting ? (
+        <div className="study-waiting">
+          <h2>Next Review Soon</h2>
+          <p>
+            This card is in a short learning step and will return in {nextReviewCountdown}.
+          </p>
+        </div>
+      ) : isComplete ? (
         <div className="study-complete">
           <h2>Session Complete!</h2>
           <p>You've reviewed all due cards.</p>
