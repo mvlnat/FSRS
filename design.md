@@ -33,6 +33,7 @@
 - Session statistics
 - Dashboard study snapshot with today, last 7 days, average rating, and retention
 - Short learning steps stay in the study session and return when due
+- When the visible queue runs out, the session pulls any newly due cards without requiring a manual refresh
 
 ---
 

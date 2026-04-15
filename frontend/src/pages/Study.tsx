@@ -369,11 +369,9 @@ export function Study() {
       const data = await api.getDueCards(deckId);
       setCards(data);
       setShowBack(false);
-      if (isInitial && data.length > 0) {
+      if (isInitial) {
         setTotalInSession(data.length);
         setCompleted(0);
-      }
-      if (isInitial) {
         setPendingReviews([]);
       }
     } catch (err) {
@@ -435,9 +433,12 @@ export function Study() {
         setTotalInSession((count) => count + 1);
       }
 
-      if (remainingCards.length === 0 && !shouldRequeueLearningCard(nextState)) {
+      if (remainingCards.length === 0) {
         const freshDueCards = await api.getDueCards(deckId!);
         setCards(freshDueCards);
+        if (freshDueCards.length > 0) {
+          setTotalInSession((count) => count + freshDueCards.length);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit review');
