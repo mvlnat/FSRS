@@ -3,6 +3,33 @@ import { Link } from 'react-router-dom';
 import type { DeckWithStats } from '../types';
 import * as api from '../api/client';
 
+function formatReviewCount(value: number): string {
+  return value.toLocaleString();
+}
+
+function formatAvgRating(value: number): string {
+  if (value <= 0) {
+    return '—';
+  }
+
+  return `${value.toFixed(1)}/4`;
+}
+
+function getStudyStatsSummary(stats: api.StudyStats): string {
+  const reviewNoun = stats.totalReviews === 1 ? 'review' : 'reviews';
+  const formattedTotal = formatReviewCount(stats.totalReviews);
+
+  if (stats.totalReviews === stats.reviewsToday) {
+    return `All ${formattedTotal} recorded ${reviewNoun} happened today.`;
+  }
+
+  if (stats.totalReviews === stats.reviewsThisWeek) {
+    return `All ${formattedTotal} recorded ${reviewNoun} are from the last 7 days.`;
+  }
+
+  return `${formattedTotal} recorded ${reviewNoun} so far.`;
+}
+
 export function Decks() {
   const [decks, setDecks] = useState<DeckWithStats[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,23 +143,29 @@ export function Decks() {
 
       {stats && stats.totalReviews > 0 && (
         <div className="study-stats-card">
-          <h2>Study Statistics</h2>
+          <div className="study-stats-header">
+            <div>
+              <h2>Study Statistics</h2>
+              <p className="study-stats-subtitle">Recent activity and answer quality</p>
+            </div>
+            <p className="study-stats-summary">{getStudyStatsSummary(stats)}</p>
+          </div>
           <div className="stats-grid">
             <div className="stat-item">
-              <span className="stat-value">{stats.reviewsToday}</span>
+              <span className="stat-value">{formatReviewCount(stats.reviewsToday)}</span>
               <span className="stat-label">Reviews Today</span>
             </div>
             <div className="stat-item">
-              <span className="stat-value">{stats.reviewsThisWeek}</span>
-              <span className="stat-label">This Week</span>
+              <span className="stat-value">{formatReviewCount(stats.reviewsThisWeek)}</span>
+              <span className="stat-label">Last 7 Days</span>
             </div>
             <div className="stat-item">
-              <span className="stat-value">{stats.totalReviews}</span>
-              <span className="stat-label">Total Reviews</span>
+              <span className="stat-value">{formatAvgRating(stats.avgRating)}</span>
+              <span className="stat-label">Average Rating</span>
             </div>
             <div className="stat-item">
               <span className="stat-value">{stats.retentionRate.toFixed(0)}%</span>
-              <span className="stat-label">Retention Rate</span>
+              <span className="stat-label">Good or Easy</span>
             </div>
           </div>
         </div>

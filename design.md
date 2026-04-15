@@ -30,6 +30,7 @@
 - Keyboard shortcuts (Space to flip, 1-4 for ratings)
 - Progress bar
 - Session statistics
+- Dashboard study snapshot with today, last 7 days, average rating, and retention
 
 ---
 

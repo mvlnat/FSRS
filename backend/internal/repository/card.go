@@ -255,10 +255,10 @@ func (r *CardRepository) GetUserStudyStats(ctx context.Context, userID uuid.UUID
 	err := r.db.Pool.QueryRow(ctx, `
 		SELECT
 			COUNT(r.id) as total_reviews,
-			COUNT(CASE WHEN r.reviewed_at >= CURRENT_DATE THEN 1 END) as reviews_today,
-			COUNT(CASE WHEN r.reviewed_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as reviews_this_week,
+			COUNT(*) FILTER (WHERE r.reviewed_at >= CURRENT_DATE) as reviews_today,
+			COUNT(*) FILTER (WHERE r.reviewed_at >= CURRENT_DATE - INTERVAL '6 days') as reviews_this_week,
 			AVG(r.rating)::float as avg_rating,
-			(COUNT(CASE WHEN r.rating >= 3 THEN 1 END)::float / NULLIF(COUNT(*)::float, 0)) * 100 as retention_rate
+			(COUNT(*) FILTER (WHERE r.rating >= 3)::float / NULLIF(COUNT(*)::float, 0)) * 100 as retention_rate
 		FROM reviews r
 		JOIN cards c ON r.card_id = c.id
 		JOIN decks d ON c.deck_id = d.id
