@@ -60,7 +60,7 @@ export function Decks() {
     try {
       const data = await api.getStudyStats();
       setStats(data);
-    } catch (err) {
+    } catch {
       // Stats are not critical, silently ignore
     }
   };

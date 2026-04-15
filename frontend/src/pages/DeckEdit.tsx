@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { Deck, CardWithState, Tag } from '../types';
 import * as api from '../api/client';
@@ -83,11 +83,7 @@ export function DeckEdit() {
     return result;
   }, [cards, searchQuery, sortBy, filterTagId]);
 
-  useEffect(() => {
-    if (id) loadDeck();
-  }, [id]);
-
-  const loadDeck = async () => {
+  const loadDeck = useCallback(async () => {
     if (!id) return;
     try {
       const [deckData, cardsData, tagsData] = await Promise.all([
@@ -105,7 +101,13 @@ export function DeckEdit() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    if (id) {
+      void loadDeck();
+    }
+  }, [id, loadDeck]);
 
   const handleUpdateDeck = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,7 +115,7 @@ export function DeckEdit() {
     setSavingDeck(true);
     try {
       await api.updateDeck(id, name, description);
-      loadDeck();
+      await loadDeck();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update deck');
     } finally {
@@ -130,7 +132,7 @@ export function DeckEdit() {
       setNewBack('');
       setNewLink('');
       setShowAddCard(false);
-      loadDeck();
+      await loadDeck();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add card');
     }
@@ -141,7 +143,7 @@ export function DeckEdit() {
       await api.updateCard(cardId, editFront, editBack, editLink);
       await api.setCardTags(cardId, editTagIds);
       setEditingCard(null);
-      loadDeck();
+      await loadDeck();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update card');
     }
@@ -153,7 +155,7 @@ export function DeckEdit() {
     try {
       await api.createTag(id, newTagName.trim());
       setNewTagName('');
-      loadDeck();
+      await loadDeck();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create tag');
     }
@@ -164,7 +166,7 @@ export function DeckEdit() {
     try {
       await api.deleteTag(tagId);
       if (filterTagId === tagId) setFilterTagId('');
-      loadDeck();
+      await loadDeck();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete tag');
     }
@@ -182,7 +184,7 @@ export function DeckEdit() {
     if (!confirm('Delete this card?')) return;
     try {
       await api.deleteCard(cardId);
-      loadDeck();
+      await loadDeck();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete card');
     }

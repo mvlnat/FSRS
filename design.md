@@ -46,7 +46,9 @@ fsrs/
 │   │   ├── api/
 │   │   │   └── client.ts        # API functions
 │   │   ├── hooks/
-│   │   │   └── useAuth.tsx      # Auth context & provider
+│   │   │   ├── AuthProvider.tsx # Auth provider
+│   │   │   ├── auth-context.ts  # Auth context types and object
+│   │   │   └── useAuth.tsx      # Auth hook
 │   │   ├── pages/
 │   │   │   ├── Login.tsx
 │   │   │   ├── Register.tsx
