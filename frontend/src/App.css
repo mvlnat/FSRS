@@ -1285,8 +1285,15 @@ button.code-block-copy:active {
   margin-bottom: 32px;
 }
 
-.flashcard-front h3,
-.flashcard-back h3 {
+.flashcard-front {
+  padding: 24px 24px 28px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, #ffffff 0%, var(--bg-tertiary) 100%);
+}
+
+.flashcard-front > h3,
+.flashcard-back > h3 {
   color: var(--text-tertiary);
   font-size: 12px;
   font-weight: 600;
@@ -1295,16 +1302,11 @@ button.code-block-copy:active {
   margin-bottom: 16px;
 }
 
-.flashcard-front p,
-.flashcard-back p {
-  font-size: 21px;
-  color: var(--text-primary);
-  line-height: 1.4;
-}
-
 .flashcard-text {
   text-align: left;
   color: var(--text-primary);
+  font-size: 18px;
+  line-height: 1.58;
 }
 
 .flashcard-text > :first-child {
@@ -1315,27 +1317,60 @@ button.code-block-copy:active {
   margin-bottom: 0;
 }
 
-.flashcard-text p {
-  margin: 0 0 12px 0;
+.flashcard-text > * {
+  margin: 0;
 }
 
-.flashcard-text p:last-child {
-  margin-bottom: 0;
+.flashcard-text > * + * {
+  margin-top: 14px;
+}
+
+.flashcard-text p,
+.flashcard-text li {
+  color: var(--text-primary);
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.flashcard-text h1,
+.flashcard-text h2,
+.flashcard-text h3,
+.flashcard-text h4,
+.flashcard-text h5,
+.flashcard-text h6 {
+  color: var(--text-primary);
+  line-height: 1.22;
+}
+
+.flashcard-text h1 {
+  font-size: 1.5em;
+}
+
+.flashcard-text h2 {
+  font-size: 1.32em;
+}
+
+.flashcard-text h3 {
+  font-size: 1.18em;
+}
+
+.flashcard-text h4,
+.flashcard-text h5,
+.flashcard-text h6 {
+  font-size: 1.05em;
 }
 
 .flashcard-text ul,
 .flashcard-text ol {
-  margin: 0 0 16px 0;
-  padding-left: 24px;
+  padding-left: 1.35em;
 }
 
 .flashcard-text li + li {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .flashcard-text blockquote {
-  margin: 16px 0;
-  padding-left: 16px;
+  padding: 4px 0 4px 16px;
   border-left: 3px solid rgba(0, 113, 227, 0.2);
   color: var(--text-secondary);
 }
@@ -1506,13 +1541,16 @@ button.code-block-copy:active {
     border-radius: 20px;
   }
 
+  .flashcard-front {
+    padding: 20px 18px 24px;
+  }
+
   .flashcard-content {
     min-height: 160px;
   }
 
-  .flashcard-front p,
-  .flashcard-back p {
-    font-size: 19px;
+  .flashcard-text {
+    font-size: 17px;
   }
 
   .code-block-header {
