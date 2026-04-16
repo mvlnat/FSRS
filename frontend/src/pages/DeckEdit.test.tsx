@@ -56,6 +56,14 @@ const initialCards: CardWithState[] = [
 ];
 
 const noTags: Tag[] = [];
+const biologyTags: Tag[] = [
+  {
+    id: 'tag-1',
+    deck_id: 'deck-1',
+    name: 'Cells',
+    created_at: '2026-04-14T00:00:00Z',
+  },
+];
 
 function renderDeckEdit() {
   return render(
@@ -145,5 +153,77 @@ describe('DeckEdit', () => {
     });
     await screen.findByRole('button', { name: 'Cards (2)' });
     expect(screen.getByText('Added question')).toBeInTheDocument();
+  });
+
+  it('saves edited tags through the card update request', async () => {
+    const user = userEvent.setup();
+
+    mockedApi.getDeck.mockResolvedValue(baseDeck);
+    mockedApi.getCards.mockResolvedValue(initialCards);
+    mockedApi.getTags.mockResolvedValue(biologyTags);
+    mockedApi.updateCard.mockResolvedValue(initialCards[0]);
+
+    renderDeckEdit();
+
+    await screen.findByText('Existing question');
+    await user.click(screen.getByText('Existing question'));
+    await user.click(screen.getByRole('button', { name: 'Cells' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(mockedApi.updateCard).toHaveBeenCalledWith(
+        'card-1',
+        'Existing question',
+        'Existing answer',
+        '',
+        ['tag-1'],
+      );
+    });
+    expect(mockedApi.setCardTags).not.toHaveBeenCalled();
+  });
+
+  it('clears a stale error after a successful deck reload', async () => {
+    const updatedDeck: Deck = { ...baseDeck, name: 'Recovered Deck', description: 'Recovered description' };
+    const user = userEvent.setup();
+
+    mockedApi.getDeck.mockResolvedValueOnce(baseDeck).mockResolvedValueOnce(updatedDeck);
+    mockedApi.getCards.mockResolvedValue(initialCards);
+    mockedApi.getTags.mockResolvedValue(noTags);
+    mockedApi.updateDeck
+      .mockRejectedValueOnce(new Error('Failed to update deck'))
+      .mockResolvedValueOnce(updatedDeck);
+
+    renderDeckEdit();
+
+    await screen.findByRole('heading', { name: 'Biology' });
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+
+    const nameInput = await screen.findByLabelText('Deck Name');
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Recovered Deck');
+
+    const descriptionInput = screen.getByLabelText('Description');
+    await user.clear(descriptionInput);
+    await user.type(descriptionInput, 'Recovered description');
+
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await screen.findByText('Failed to update deck');
+
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await screen.findByRole('heading', { name: 'Recovered Deck' });
+    expect(screen.queryByText('Failed to update deck')).not.toBeInTheDocument();
+  });
+
+  it('shows the load error instead of a false not-found state when startup requests fail', async () => {
+    mockedApi.getDeck.mockRejectedValue(new Error('backend unavailable'));
+    mockedApi.getCards.mockResolvedValue(initialCards);
+    mockedApi.getTags.mockResolvedValue(noTags);
+
+    renderDeckEdit();
+
+    await screen.findByRole('heading', { name: 'Unable to Load Deck' });
+    expect(screen.getByText('backend unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Deck not found')).not.toBeInTheDocument();
   });
 });

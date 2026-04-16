@@ -49,6 +49,7 @@ export function Decks() {
     try {
       const data = await api.getDecks();
       setDecks(data);
+      setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load decks');
     } finally {
@@ -67,12 +68,18 @@ export function Decks() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedName = newName.trim();
+    if (!trimmedName) {
+      setError('Deck name is required');
+      return;
+    }
+
     try {
-      await api.createDeck(newName, newDescription);
+      await api.createDeck(trimmedName, newDescription);
       setNewName('');
       setNewDescription('');
       setShowCreate(false);
-      loadDecks();
+      await loadDecks();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create deck');
     }
@@ -106,7 +113,7 @@ export function Decks() {
       }
 
       await api.importDeck(data);
-      loadDecks();
+      await loadDecks();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to import deck');
     } finally {
@@ -191,7 +198,9 @@ export function Decks() {
               onChange={(e) => setNewDescription(e.target.value)}
             />
           </div>
-          <button type="submit">Create Deck</button>
+          <button type="submit" disabled={!newName.trim()}>
+            Create Deck
+          </button>
         </form>
       )}
 

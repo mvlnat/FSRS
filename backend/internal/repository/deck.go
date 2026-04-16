@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,6 +27,11 @@ func NewDeckRepository(db *DB) *DeckRepository {
 }
 
 func (r *DeckRepository) Create(ctx context.Context, userID uuid.UUID, name, description string) (*model.Deck, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, ErrInvalidInput
+	}
+
 	deck := &model.Deck{}
 	err := r.db.Pool.QueryRow(ctx,
 		`INSERT INTO decks (user_id, name, description) VALUES ($1, $2, $3)
@@ -77,6 +83,11 @@ func (r *DeckRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]mo
 }
 
 func (r *DeckRepository) Update(ctx context.Context, id uuid.UUID, name, description string) (*model.Deck, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, ErrInvalidInput
+	}
+
 	deck := &model.Deck{}
 	err := r.db.Pool.QueryRow(ctx,
 		`UPDATE decks SET name = $2, description = $3 WHERE id = $1
@@ -164,6 +175,17 @@ func (r *DeckRepository) ListByUserWithStats(ctx context.Context, userID uuid.UU
 
 // ImportDeckWithCards creates a deck and all its cards atomically in a transaction
 func (r *DeckRepository) ImportDeckWithCards(ctx context.Context, userID uuid.UUID, name, description string, cards []CardImport) (*model.Deck, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, ErrInvalidInput
+	}
+
+	for _, card := range cards {
+		if strings.TrimSpace(card.Front) == "" || strings.TrimSpace(card.Back) == "" {
+			return nil, ErrInvalidInput
+		}
+	}
+
 	tx, err := r.db.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -183,9 +205,6 @@ func (r *DeckRepository) ImportDeckWithCards(ctx context.Context, userID uuid.UU
 
 	// Create all cards
 	for _, card := range cards {
-		if card.Front == "" || card.Back == "" {
-			continue // Skip invalid cards
-		}
 		_, err := tx.Exec(ctx,
 			`INSERT INTO cards (deck_id, front, back, link) VALUES ($1, $2, $3, $4)`,
 			deck.ID, card.Front, card.Back, card.Link,

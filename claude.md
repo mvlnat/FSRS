@@ -10,7 +10,10 @@
 
 ### Run Tests
 ```bash
-eval "$(devbox shellenv)" && cd backend && go test ./internal/...
+devbox run bash -lc 'cd backend && go test ./...'
+devbox run bash -lc 'cd frontend && npm test'
+devbox run bash -lc 'cd frontend && npm run lint'
+devbox run bash -lc 'cd frontend && npm run build'
 ```
 
 ### Build Docker Images (for amd64 server)

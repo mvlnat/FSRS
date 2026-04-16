@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -20,6 +20,26 @@ const studyCard: CardWithState = {
   back: 'A spaced repetition scheduler.',
   link: '',
   created_at: '2026-04-14T00:00:00Z',
+  tags: [],
+};
+
+const followUpCard: CardWithState = {
+  id: 'card-2',
+  deck_id: 'deck-1',
+  front: 'What is spaced repetition?',
+  back: 'Timed recall for memory retention.',
+  link: '',
+  created_at: '2026-04-14T00:01:00Z',
+  tags: [],
+};
+
+const trailingCard: CardWithState = {
+  id: 'card-3',
+  deck_id: 'deck-1',
+  front: 'Trailing card question',
+  back: 'Trailing card answer',
+  link: '',
+  created_at: '2026-04-14T00:02:00Z',
   tags: [],
 };
 
@@ -82,5 +102,97 @@ describe('Study', () => {
     });
 
     await screen.findByText('Session Complete!');
+  });
+
+  it('shows a retry state instead of a false completion message when the due-card load fails', async () => {
+    mockedApi.getDueCards.mockRejectedValueOnce(new Error('backend unavailable'));
+
+    renderStudy();
+
+    await screen.findByRole('heading', { name: 'Unable to Load Session' });
+    expect(screen.getByText('backend unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Session Complete!')).not.toBeInTheDocument();
+  });
+
+  it('does not render unsafe card links', async () => {
+    const user = userEvent.setup();
+
+    mockedApi.getDueCards.mockResolvedValueOnce([
+      { ...studyCard, link: 'javascript:alert(1)' },
+    ]);
+
+    renderStudy();
+
+    await screen.findByText('What is FSRS?');
+    await user.click(screen.getByRole('button', { name: /show answer/i }));
+
+    expect(screen.queryByRole('link', { name: 'Open Link' })).not.toBeInTheDocument();
+  });
+
+  it('preserves cards that become due while another review is still submitting', async () => {
+    const pendingSecondReview = deferred<CardState>();
+
+    mockedApi.getDueCards.mockResolvedValueOnce([studyCard, followUpCard, trailingCard]);
+    mockedApi.reviewCard
+      .mockResolvedValueOnce({
+        id: 'state-1',
+        card_id: studyCard.id,
+        due: new Date(Date.now() + 1000).toISOString(),
+        stability: 1,
+        difficulty: 1,
+        elapsed_days: 0,
+        scheduled_days: 0,
+        reps: 1,
+        lapses: 0,
+        state: 1,
+        last_review: new Date().toISOString(),
+      })
+      .mockReturnValueOnce(pendingSecondReview.promise);
+
+    renderStudy();
+
+    await screen.findByText('What is FSRS?');
+    fireEvent.click(screen.getByRole('button', { name: /show answer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /good/i }));
+    await waitFor(() => {
+      expect(mockedApi.reviewCard).toHaveBeenCalledWith(studyCard.id, 3);
+    });
+    expect(screen.getByText('What is spaced repetition?')).toBeInTheDocument();
+    expect(screen.getByText('Due Now: 2')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /show answer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /good/i }));
+    await waitFor(() => {
+      expect(mockedApi.reviewCard).toHaveBeenCalledWith(followUpCard.id, 3);
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Due Now: 3')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      pendingSecondReview.resolve({
+        id: 'state-2',
+        card_id: followUpCard.id,
+        due: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        stability: 2,
+        difficulty: 1,
+        elapsed_days: 1,
+        scheduled_days: 1,
+        reps: 1,
+        lapses: 0,
+        state: 2,
+        last_review: new Date().toISOString(),
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Due Now: 2')).toBeInTheDocument();
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -12,9 +12,22 @@ vi.mock('../api/client', () => ({
   login: vi.fn(),
   register: vi.fn(),
   logout: vi.fn(),
+  onUnauthorized: vi.fn(),
+  getLatestRequestId: vi.fn(),
 }));
 
 const mockedApi = vi.mocked(api);
+let unauthorizedHandler: ((requestId: number) => void) | null = null;
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 function AuthStateHarness() {
   const { user, loading, error, isAuthenticated } = useAuth();
@@ -30,7 +43,7 @@ function AuthStateHarness() {
 }
 
 function AuthActionHarness() {
-  const { user, error, login, register } = useAuth();
+  const { user, error, login, register, isAuthenticated } = useAuth();
 
   const handleLogin = () => {
     void login('ada@example.com', 'secret123').catch(() => undefined);
@@ -44,6 +57,7 @@ function AuthActionHarness() {
     <div>
       <div data-testid="user-email">{user?.email ?? 'none'}</div>
       <div data-testid="error">{error ?? 'none'}</div>
+      <div data-testid="authenticated">{String(isAuthenticated)}</div>
       <button onClick={handleLogin}>Log In</button>
       <button onClick={handleRegister}>Register</button>
     </div>
@@ -57,6 +71,16 @@ function renderWithProvider(children: ReactNode) {
 describe('AuthProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    unauthorizedHandler = null;
+    mockedApi.getLatestRequestId.mockReturnValue(0);
+    mockedApi.onUnauthorized.mockImplementation((callback: (requestId: number) => void) => {
+      unauthorizedHandler = callback;
+      return () => {
+        if (unauthorizedHandler === callback) {
+          unauthorizedHandler = null;
+        }
+      };
+    });
   });
 
   it('hydrates the authenticated user on mount', async () => {
@@ -106,6 +130,31 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('error')).toHaveTextContent('none');
   });
 
+  it('clears the authenticated session after an unauthorized API signal', async () => {
+    const user: User = { id: 'user-1', email: 'ada@example.com' };
+    mockedApi.getMe.mockResolvedValue(user);
+
+    renderWithProvider(<AuthStateHarness />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+    });
+
+    if (!unauthorizedHandler) {
+      throw new Error('expected unauthorized handler registration');
+    }
+
+    act(() => {
+      unauthorizedHandler?.(1);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
+    });
+    expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+    expect(screen.getByTestId('error')).toHaveTextContent('none');
+  });
+
   it('exposes registration failures through the auth error state', async () => {
     mockedApi.getMe.mockRejectedValue(new Error('missing session'));
     mockedApi.register.mockRejectedValue(new Error('Email already exists'));
@@ -123,5 +172,35 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('error')).toHaveTextContent('Email already exists');
     });
     expect(mockedApi.register).toHaveBeenCalledWith('grace@example.com', 'secret123');
+  });
+
+  it('ignores stale bootstrap auth failures after a successful login', async () => {
+    const bootstrapRequest = deferred<User>();
+    const user = userEvent.setup();
+
+    mockedApi.getMe.mockReturnValue(bootstrapRequest.promise);
+    mockedApi.login.mockResolvedValue({ id: 'user-2', email: 'ada@example.com' });
+    mockedApi.getLatestRequestId.mockReturnValue(2);
+
+    renderWithProvider(<AuthActionHarness />);
+
+    await user.click(screen.getByRole('button', { name: 'Log In' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-email')).toHaveTextContent('ada@example.com');
+    });
+
+    act(() => {
+      unauthorizedHandler?.(1);
+    });
+    bootstrapRequest.reject(new Error('expired session'));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('user-email')).toHaveTextContent('ada@example.com');
+    expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+    expect(screen.getByTestId('error')).toHaveTextContent('none');
   });
 });

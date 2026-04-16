@@ -1,4 +1,4 @@
-import { Children, isValidElement, useCallback, useEffect, useState } from 'react';
+import { Children, isValidElement, useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Markdown from 'react-markdown';
@@ -6,6 +6,7 @@ import type { Components } from 'react-markdown';
 import type { CardState, CardWithState, Rating } from '../types';
 import { RATING_LABELS } from '../types';
 import * as api from '../api/client';
+import { normalizeOptionalExternalLink } from '../utils/links';
 
 type HighlightTokenType = 'plain' | 'comment' | 'string' | 'keyword' | 'number' | 'function' | 'property' | 'operator';
 
@@ -363,6 +364,7 @@ export function Study() {
   const [totalInSession, setTotalInSession] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [submitting, setSubmitting] = useState(false);
+  const cardsRef = useRef<CardWithState[]>([]);
 
   const loadCards = useCallback(async (isInitial = false) => {
     if (!deckId) return;
@@ -370,6 +372,7 @@ export function Study() {
       const data = await api.getDueCards(deckId);
       setCards(data);
       setShowBack(false);
+      setError('');
       if (isInitial) {
         setTotalInSession(data.length);
         setCompleted(0);
@@ -385,6 +388,10 @@ export function Study() {
   useEffect(() => {
     if (deckId) loadCards(true);
   }, [deckId, loadCards]);
+
+  useEffect(() => {
+    cardsRef.current = cards;
+  }, [cards]);
 
   useEffect(() => {
     if (pendingReviews.length === 0) return;
@@ -423,7 +430,7 @@ export function Study() {
       setSubmitting(true);
       const nextState = await api.reviewCard(card.id, rating);
       setCompleted(c => c + 1);
-      setCards(remainingCards);
+      setCards((currentCards) => currentCards.filter((candidate) => candidate.id !== card.id));
       setShowBack(false);
       setError('');
 
@@ -437,9 +444,31 @@ export function Study() {
 
       if (remainingCards.length === 0) {
         const freshDueCards = await api.getDueCards(deckId!);
-        setCards(freshDueCards);
-        if (freshDueCards.length > 0) {
-          setTotalInSession((count) => count + freshDueCards.length);
+        const existingCardIds = new Set(
+          cardsRef.current
+            .filter((candidate) => candidate.id !== card.id)
+            .map((candidate) => candidate.id),
+        );
+        const addedCount = freshDueCards.filter((candidate) => !existingCardIds.has(candidate.id)).length;
+
+        setCards((currentCards) => {
+          const seenIds = new Set(currentCards.map((candidate) => candidate.id));
+          const mergedCards = [...currentCards];
+
+          for (const freshDueCard of freshDueCards) {
+            if (seenIds.has(freshDueCard.id)) {
+              continue;
+            }
+
+            seenIds.add(freshDueCard.id);
+            mergedCards.push(freshDueCard);
+          }
+
+          return mergedCards;
+        });
+
+        if (addedCount > 0) {
+          setTotalInSession((count) => count + addedCount);
         }
       }
     } catch (err) {
@@ -480,8 +509,10 @@ export function Study() {
   const currentCard = cards[0];
   const nextPendingReview = pendingReviews[0];
   const isWaiting = !currentCard && pendingReviews.length > 0;
-  const isComplete = !currentCard && pendingReviews.length === 0;
+  const isErrorState = !currentCard && pendingReviews.length === 0 && error !== '';
+  const isComplete = !currentCard && pendingReviews.length === 0 && error === '';
   const nextReviewCountdown = nextPendingReview ? formatCountdown(nextPendingReview.dueAt - now) : null;
+  const safeCurrentCardLink = currentCard ? normalizeOptionalExternalLink(currentCard.link) : null;
 
   return (
     <div className="study-container">
@@ -489,7 +520,7 @@ export function Study() {
         Back to Decks
       </button>
 
-      {error && <div className="error">{error}</div>}
+      {error && !isErrorState && <div className="error">{error}</div>}
 
       {totalInSession > 0 && (
         <div className="progress-bar-container">
@@ -513,6 +544,12 @@ export function Study() {
             This card is in a short learning step and will return in {nextReviewCountdown}.
           </p>
         </div>
+      ) : isErrorState ? (
+        <div className="study-complete">
+          <h2>Unable to Load Session</h2>
+          <p>{error}</p>
+          <button onClick={() => void loadCards(true)}>Retry</button>
+        </div>
       ) : isComplete ? (
         <div className="study-complete">
           <h2>Session Complete!</h2>
@@ -535,9 +572,9 @@ export function Study() {
                 <div className="flashcard-text">
                   <Markdown components={markdownComponents}>{currentCard.back}</Markdown>
                 </div>
-                {currentCard.link && (
+                {safeCurrentCardLink && (
                   <div className="card-link-wrapper">
-                    <a href={currentCard.link} target="_blank" rel="noopener noreferrer" className="card-link-btn">
+                    <a href={safeCurrentCardLink} target="_blank" rel="noopener noreferrer" className="card-link-btn">
                       Open Link
                     </a>
                   </div>

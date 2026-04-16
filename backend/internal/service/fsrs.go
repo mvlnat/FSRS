@@ -21,6 +21,10 @@ func NewFSRSService() *FSRSService {
 
 func (s *FSRSService) Review(cardState *model.CardState, rating int) *model.CardState {
 	now := time.Now()
+	lastReview := time.Time{}
+	if cardState.LastReview != nil {
+		lastReview = *cardState.LastReview
+	}
 
 	// Convert model state to FSRS card
 	card := fsrs.Card{
@@ -32,7 +36,7 @@ func (s *FSRSService) Review(cardState *model.CardState, rating int) *model.Card
 		Reps:          uint64(cardState.Reps),
 		Lapses:        uint64(cardState.Lapses),
 		State:         fsrs.State(cardState.State),
-		LastReview:    now,
+		LastReview:    lastReview,
 	}
 
 	// Convert rating (1-4) to FSRS rating
@@ -41,6 +45,11 @@ func (s *FSRSService) Review(cardState *model.CardState, rating int) *model.Card
 	// Schedule the card
 	schedulingInfo := s.fsrs.Repeat(card, now)
 	newCard := schedulingInfo[fsrsRating].Card
+	var reviewedAt *time.Time
+	if !newCard.LastReview.IsZero() {
+		lastReview := newCard.LastReview
+		reviewedAt = &lastReview
+	}
 
 	return &model.CardState{
 		ID:            cardState.ID,
@@ -53,7 +62,7 @@ func (s *FSRSService) Review(cardState *model.CardState, rating int) *model.Card
 		Reps:          int(newCard.Reps),
 		Lapses:        int(newCard.Lapses),
 		State:         int(newCard.State),
-		LastReview:    &now,
+		LastReview:    reviewedAt,
 	}
 }
 

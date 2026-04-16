@@ -101,19 +101,21 @@ func (r *CardRepository) ListByDeck(ctx context.Context, deckID uuid.UUID) ([]mo
 }
 
 func (r *CardRepository) Update(ctx context.Context, id uuid.UUID, front, back, link string) (*model.Card, error) {
+	return r.UpdateWithTags(ctx, id, front, back, link, nil, false)
+}
+
+func (r *CardRepository) UpdateWithTags(ctx context.Context, id uuid.UUID, front, back, link string, tagIDs []uuid.UUID, replaceTags bool) (*model.Card, error) {
 	tx, err := r.db.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
 
-	card := &model.Card{}
+	existing := &model.Card{}
 	err = tx.QueryRow(ctx,
-		`UPDATE cards SET front = $2, back = $3, link = $4 WHERE id = $1
-		 RETURNING id, deck_id, front, back, link, created_at`,
-		id, front, back, link,
-	).Scan(&card.ID, &card.DeckID, &card.Front, &card.Back, &card.Link, &card.CreatedAt)
-
+		`SELECT id, deck_id, front, back, link, created_at FROM cards WHERE id = $1 FOR UPDATE`,
+		id,
+	).Scan(&existing.ID, &existing.DeckID, &existing.Front, &existing.Back, &existing.Link, &existing.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -121,13 +123,48 @@ func (r *CardRepository) Update(ctx context.Context, id uuid.UUID, front, back, 
 		return nil, err
 	}
 
-	// Editing card content invalidates prior scheduling and review history.
-	if _, err := tx.Exec(ctx, `DELETE FROM card_states WHERE card_id = $1`, id); err != nil {
-		return nil, err
+	contentChanged := existing.Front != front || existing.Back != back || existing.Link != link
+
+	card := existing
+	if contentChanged {
+		card = &model.Card{}
+		err = tx.QueryRow(ctx,
+			`UPDATE cards SET front = $2, back = $3, link = $4 WHERE id = $1
+			 RETURNING id, deck_id, front, back, link, created_at`,
+			id, front, back, link,
+		).Scan(&card.ID, &card.DeckID, &card.Front, &card.Back, &card.Link, &card.CreatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	if _, err := tx.Exec(ctx, `DELETE FROM reviews WHERE card_id = $1`, id); err != nil {
-		return nil, err
+	if replaceTags {
+		if _, err := tx.Exec(ctx, `DELETE FROM card_tags WHERE card_id = $1`, id); err != nil {
+			return nil, err
+		}
+
+		for _, tagID := range tagIDs {
+			if _, err := tx.Exec(ctx,
+				`INSERT INTO card_tags (card_id, tag_id) VALUES ($1, $2)`,
+				id, tagID,
+			); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if contentChanged {
+		// Editing card content invalidates prior scheduling and review history.
+		if _, err := tx.Exec(ctx, `DELETE FROM card_states WHERE card_id = $1`, id); err != nil {
+			return nil, err
+		}
+
+		if _, err := tx.Exec(ctx, `DELETE FROM reviews WHERE card_id = $1`, id); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

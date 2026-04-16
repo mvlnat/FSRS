@@ -2,9 +2,11 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -44,6 +46,22 @@ type createDeckRequest struct {
 	Description string `json:"description"`
 }
 
+const maxDeckNameLength = 255
+
+func normalizeDeckName(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func validateDeckName(name string) error {
+	if name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if utf8.RuneCountInString(name) > maxDeckNameLength {
+		return fmt.Errorf("name must be %d characters or fewer", maxDeckNameLength)
+	}
+	return nil
+}
+
 func (h *DeckHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {
@@ -78,12 +96,17 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" {
-		http.Error(w, "Name is required", http.StatusBadRequest)
+	req.Name = normalizeDeckName(req.Name)
+	if err := validateDeckName(req.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	deck, err := h.deckRepo.Create(r.Context(), userID, req.Name, req.Description)
+	if err == repository.ErrInvalidInput {
+		http.Error(w, "Name is required", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -160,7 +183,17 @@ func (h *DeckHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Name = normalizeDeckName(req.Name)
+	if err := validateDeckName(req.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	deck, err := h.deckRepo.Update(r.Context(), deckID, req.Name, req.Description)
+	if err == repository.ErrInvalidInput {
+		http.Error(w, "Name is required", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -331,9 +364,25 @@ func (h *DeckHandler) Import(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if export.Name == "" {
-		http.Error(w, "Deck name is required", http.StatusBadRequest)
+	export.Name = normalizeDeckName(export.Name)
+	if err := validateDeckName(export.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+
+	for i, card := range export.Cards {
+		if strings.TrimSpace(card.Front) == "" || strings.TrimSpace(card.Back) == "" {
+			http.Error(w, fmt.Sprintf("Card %d must include both front and back content", i+1), http.StatusBadRequest)
+			return
+		}
+
+		normalizedLink, err := normalizeOptionalExternalLink(card.Link)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Card %d link must be a valid http or https URL", i+1), http.StatusBadRequest)
+			return
+		}
+
+		export.Cards[i].Link = normalizedLink
 	}
 
 	// Convert to repository format
@@ -348,6 +397,10 @@ func (h *DeckHandler) Import(w http.ResponseWriter, r *http.Request) {
 
 	// Create deck and cards atomically
 	deck, err := h.deckRepo.ImportDeckWithCards(r.Context(), userID, export.Name, export.Description, cards)
+	if err == repository.ErrInvalidInput {
+		http.Error(w, "Deck import contains invalid content", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return

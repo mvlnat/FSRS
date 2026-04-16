@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { Deck, CardWithState, Tag } from '../types';
 import * as api from '../api/client';
+import { normalizeOptionalExternalLink } from '../utils/links';
 
 type Tab = 'settings' | 'cards';
 type SortOption = 'newest' | 'oldest' | 'alpha' | 'mostReviews' | 'leastReviews';
@@ -96,6 +97,7 @@ export function DeckEdit() {
       setTags(tagsData);
       setName(deckData.name);
       setDescription(deckData.description);
+      setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load deck');
     } finally {
@@ -112,9 +114,15 @@ export function DeckEdit() {
   const handleUpdateDeck = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id) return;
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError('Deck name is required');
+      return;
+    }
+
     setSavingDeck(true);
     try {
-      await api.updateDeck(id, name, description);
+      await api.updateDeck(id, trimmedName, description);
       await loadDeck();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update deck');
@@ -126,8 +134,15 @@ export function DeckEdit() {
   const handleAddCard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id) return;
+
+    const normalizedLink = normalizeOptionalExternalLink(newLink);
+    if (newLink.trim() && !normalizedLink) {
+      setError('Link must be a valid http or https URL');
+      return;
+    }
+
     try {
-      await api.createCard(id, newFront, newBack, newLink);
+      await api.createCard(id, newFront, newBack, normalizedLink ?? '');
       setNewFront('');
       setNewBack('');
       setNewLink('');
@@ -139,9 +154,14 @@ export function DeckEdit() {
   };
 
   const handleEditCard = async (cardId: string) => {
+    const normalizedLink = normalizeOptionalExternalLink(editLink);
+    if (editLink.trim() && !normalizedLink) {
+      setError('Link must be a valid http or https URL');
+      return;
+    }
+
     try {
-      await api.updateCard(cardId, editFront, editBack, editLink);
-      await api.setCardTags(cardId, editTagIds);
+      await api.updateCard(cardId, editFront, editBack, normalizedLink ?? '', editTagIds);
       setEditingCard(null);
       await loadDeck();
     } catch (err) {
@@ -221,7 +241,29 @@ export function DeckEdit() {
   };
 
   if (loading) return <div className="deck-edit-container">Loading...</div>;
-  if (!deck) return <div className="deck-edit-container">Deck not found</div>;
+  if (!deck) {
+    return (
+      <div className="deck-edit-container">
+        <div className="deck-edit-header">
+          <button onClick={() => navigate('/')} className="back-btn">
+            Back to Decks
+          </button>
+          <h1>{error ? 'Unable to Load Deck' : 'Deck not found'}</h1>
+        </div>
+
+        {error ? (
+          <>
+            <div className="error">{error}</div>
+            <button onClick={() => void loadDeck()} className="btn-secondary">
+              Retry
+            </button>
+          </>
+        ) : (
+          <p>This deck could not be found.</p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="deck-edit-container">
@@ -271,9 +313,9 @@ export function DeckEdit() {
                 rows={4}
               />
             </div>
-            <button type="submit" disabled={savingDeck}>
-              {savingDeck ? 'Saving...' : 'Save Changes'}
-            </button>
+	            <button type="submit" disabled={savingDeck || !name.trim()}>
+	              {savingDeck ? 'Saving...' : 'Save Changes'}
+	            </button>
           </form>
 
           <div className="tags-section">
@@ -419,98 +461,102 @@ export function DeckEdit() {
             ) : filteredCards.length === 0 ? (
               <p className="no-cards">No cards match your search.</p>
             ) : (
-              filteredCards.map((card) => (
-                <div key={card.id} className="card-item">
-                  {editingCard === card.id ? (
-                    <div className="card-edit">
-                      <p className="form-hint">
-                        Supports markdown: **bold**, *italic*, `inline code`, and code blocks with ```
-                      </p>
-                      <div className="card-form-grid">
-                        <div className="form-group">
-                          <label>Front</label>
-                          <textarea
-                            value={editFront}
-                            onChange={(e) => setEditFront(e.target.value)}
-                            rows={6}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Back</label>
-                          <textarea
-                            value={editBack}
-                            onChange={(e) => setEditBack(e.target.value)}
-                            rows={6}
-                          />
-                        </div>
-                      </div>
-                      <div className="form-group">
-                        <label>Link (optional)</label>
-                        <input
-                          type="url"
-                          value={editLink}
-                          onChange={(e) => setEditLink(e.target.value)}
-                          placeholder="https://..."
-                        />
-                      </div>
-                      {tags.length > 0 && (
-                        <div className="form-group">
-                          <label>Tags</label>
-                          <div className="tag-selector">
-                            {tags.map(tag => (
-                              <button
-                                key={tag.id}
-                                type="button"
-                                className={`tag-btn ${editTagIds.includes(tag.id) ? 'active' : ''}`}
-                                onClick={() => toggleEditTag(tag.id)}
-                              >
-                                {tag.name}
-                              </button>
-                            ))}
+              filteredCards.map((card) => {
+                const safeLink = normalizeOptionalExternalLink(card.link);
+
+                return (
+                  <div key={card.id} className="card-item">
+                    {editingCard === card.id ? (
+                      <div className="card-edit">
+                        <p className="form-hint">
+                          Supports markdown: **bold**, *italic*, `inline code`, and code blocks with ```
+                        </p>
+                        <div className="card-form-grid">
+                          <div className="form-group">
+                            <label>Front</label>
+                            <textarea
+                              value={editFront}
+                              onChange={(e) => setEditFront(e.target.value)}
+                              rows={6}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Back</label>
+                            <textarea
+                              value={editBack}
+                              onChange={(e) => setEditBack(e.target.value)}
+                              rows={6}
+                            />
                           </div>
                         </div>
-                      )}
-                      <div className="card-edit-actions">
-                        <button onClick={() => handleEditCard(card.id)}>Save</button>
-                        <button onClick={() => setEditingCard(null)} className="btn-secondary">Cancel</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="card-row">
-                      <div className="card-preview" onClick={() => startEditing(card)}>
-                        <div className="card-preview-main">
-                          <span className="card-preview-text">{getFirstLine(card.front)}</span>
-                          {card.tags && card.tags.length > 0 && (
-                            <div className="card-tags">
-                              {card.tags.map(tag => (
-                                <span key={tag.id} className="card-tag">{tag.name}</span>
+                        <div className="form-group">
+                          <label>Link (optional)</label>
+                          <input
+                            type="url"
+                            value={editLink}
+                            onChange={(e) => setEditLink(e.target.value)}
+                            placeholder="https://..."
+                          />
+                        </div>
+                        {tags.length > 0 && (
+                          <div className="form-group">
+                            <label>Tags</label>
+                            <div className="tag-selector">
+                              {tags.map(tag => (
+                                <button
+                                  key={tag.id}
+                                  type="button"
+                                  className={`tag-btn ${editTagIds.includes(tag.id) ? 'active' : ''}`}
+                                  onClick={() => toggleEditTag(tag.id)}
+                                >
+                                  {tag.name}
+                                </button>
                               ))}
                             </div>
+                          </div>
+                        )}
+                        <div className="card-edit-actions">
+                          <button onClick={() => handleEditCard(card.id)}>Save</button>
+                          <button onClick={() => setEditingCard(null)} className="btn-secondary">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="card-row">
+                        <div className="card-preview" onClick={() => startEditing(card)}>
+                          <div className="card-preview-main">
+                            <span className="card-preview-text">{getFirstLine(card.front)}</span>
+                            {card.tags && card.tags.length > 0 && (
+                              <div className="card-tags">
+                                {card.tags.map(tag => (
+                                  <span key={tag.id} className="card-tag">{tag.name}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {card.state && (
+                            <span className="card-preview-meta">
+                              {card.state.reps > 0 ? `${card.state.reps} reps` : 'New'}
+                            </span>
                           )}
                         </div>
-                        {card.state && (
-                          <span className="card-preview-meta">
-                            {card.state.reps > 0 ? `${card.state.reps} reps` : 'New'}
-                          </span>
-                        )}
+                        <div className="card-row-actions">
+                          {safeLink && (
+                            <a href={safeLink} target="_blank" rel="noopener noreferrer" className="btn-icon" title="Open link">
+                              ↗
+                            </a>
+                          )}
+                          <button onClick={() => startEditing(card)} className="btn-icon" title="Edit">
+                            ✎
+                          </button>
+                          <button onClick={() => handleDeleteCard(card.id)} className="btn-icon btn-icon-danger" title="Delete">
+                            ✕
+                          </button>
+                        </div>
                       </div>
-                      <div className="card-row-actions">
-                        {card.link && (
-                          <a href={card.link} target="_blank" rel="noopener noreferrer" className="btn-icon" title="Open link">
-                            ↗
-                          </a>
-                        )}
-                        <button onClick={() => startEditing(card)} className="btn-icon" title="Edit">
-                          ✎
-                        </button>
-                        <button onClick={() => handleDeleteCard(card.id)} className="btn-icon btn-icon-danger" title="Delete">
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

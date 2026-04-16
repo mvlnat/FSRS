@@ -8,6 +8,15 @@ import (
 	"testing"
 )
 
+func TestNormalizeEmail(t *testing.T) {
+	got := normalizeEmail("  Test.User+alias@Example.COM ")
+	want := "test.user+alias@example.com"
+
+	if got != want {
+		t.Fatalf("normalizeEmail() = %q, want %q", got, want)
+	}
+}
+
 func TestAuthHandler_Register_Validation(t *testing.T) {
 	// These tests only check validation that happens BEFORE repo access
 	tests := []struct {
@@ -69,8 +78,8 @@ func TestAuthHandler_Logout(t *testing.T) {
 
 	h.Logout(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("got status %d, want %d", rec.Code, http.StatusOK)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("got status %d, want %d", rec.Code, http.StatusNoContent)
 	}
 
 	// Check cookie is cleared

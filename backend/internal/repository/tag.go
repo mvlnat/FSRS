@@ -3,9 +3,11 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/ziyangli/fsrs/backend/internal/model"
 )
 
@@ -18,6 +20,11 @@ func NewTagRepository(db *DB) *TagRepository {
 }
 
 func (r *TagRepository) Create(ctx context.Context, deckID uuid.UUID, name string) (*model.Tag, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, ErrInvalidInput
+	}
+
 	tag := &model.Tag{}
 	err := r.db.Pool.QueryRow(ctx,
 		`INSERT INTO tags (deck_id, name) VALUES ($1, $2)
@@ -26,7 +33,8 @@ func (r *TagRepository) Create(ctx context.Context, deckID uuid.UUID, name strin
 	).Scan(&tag.ID, &tag.DeckID, &tag.Name, &tag.CreatedAt)
 
 	if err != nil {
-		if err.Error() == "ERROR: duplicate key value violates unique constraint \"tags_deck_id_name_key\" (SQLSTATE 23505)" {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return nil, ErrDuplicate
 		}
 		return nil, err
@@ -97,6 +105,11 @@ func (r *TagRepository) ListByDeck(ctx context.Context, deckID uuid.UUID) ([]mod
 }
 
 func (r *TagRepository) Update(ctx context.Context, id uuid.UUID, name string) (*model.Tag, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, ErrInvalidInput
+	}
+
 	tag := &model.Tag{}
 	err := r.db.Pool.QueryRow(ctx,
 		`UPDATE tags SET name = $2 WHERE id = $1

@@ -18,6 +18,7 @@ import (
 	"github.com/ziyangli/fsrs/backend/internal/middleware"
 	"github.com/ziyangli/fsrs/backend/internal/repository"
 	"github.com/ziyangli/fsrs/backend/internal/service"
+	dbmigrations "github.com/ziyangli/fsrs/backend/migrations"
 )
 
 // Integration tests require a running PostgreSQL database
@@ -63,74 +64,30 @@ func TestMain(m *testing.M) {
 }
 
 func setupTestSchema(ctx context.Context) error {
-	migration := `
+	if _, err := testDB.Pool.Exec(ctx, `
 		DROP TABLE IF EXISTS reviews CASCADE;
 		DROP TABLE IF EXISTS card_states CASCADE;
+		DROP TABLE IF EXISTS card_tags CASCADE;
+		DROP TABLE IF EXISTS tags CASCADE;
 		DROP TABLE IF EXISTS cards CASCADE;
 		DROP TABLE IF EXISTS decks CASCADE;
 		DROP TABLE IF EXISTS users CASCADE;
+	`); err != nil {
+		return err
+	}
 
-		CREATE TABLE users (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			email VARCHAR(255) UNIQUE NOT NULL,
-			password_hash VARCHAR(255) NOT NULL,
-			created_at TIMESTAMPTZ DEFAULT NOW()
-		);
+	scripts, err := dbmigrations.OrderedScripts()
+	if err != nil {
+		return err
+	}
 
-		CREATE TABLE decks (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			name VARCHAR(255) NOT NULL,
-			description TEXT,
-			created_at TIMESTAMPTZ DEFAULT NOW()
-		);
+	for _, script := range scripts {
+		if _, err := testDB.Pool.Exec(ctx, script.SQL); err != nil {
+			return err
+		}
+	}
 
-		CREATE TABLE cards (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
-			front TEXT NOT NULL,
-			back TEXT NOT NULL,
-			link TEXT DEFAULT '',
-			created_at TIMESTAMPTZ DEFAULT NOW()
-		);
-
-		CREATE TABLE card_states (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			card_id UUID NOT NULL UNIQUE REFERENCES cards(id) ON DELETE CASCADE,
-			due TIMESTAMPTZ NOT NULL,
-			stability FLOAT DEFAULT 0,
-			difficulty FLOAT DEFAULT 0,
-			elapsed_days INT DEFAULT 0,
-			scheduled_days INT DEFAULT 0,
-			reps INT DEFAULT 0,
-			lapses INT DEFAULT 0,
-			state INT DEFAULT 0,
-			last_review TIMESTAMPTZ
-		);
-
-			CREATE TABLE reviews (
-				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-				card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-				rating INT NOT NULL CHECK (rating >= 1 AND rating <= 4),
-				reviewed_at TIMESTAMPTZ DEFAULT NOW()
-			);
-
-			CREATE TABLE tags (
-				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-				deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
-				name VARCHAR(100) NOT NULL,
-				created_at TIMESTAMPTZ DEFAULT NOW(),
-				UNIQUE(deck_id, name)
-			);
-
-			CREATE TABLE card_tags (
-				card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-				tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-				PRIMARY KEY (card_id, tag_id)
-			);
-		`
-	_, err := testDB.Pool.Exec(ctx, migration)
-	return err
+	return nil
 }
 
 func cleanupTestDB(ctx context.Context) {
@@ -266,8 +223,43 @@ func TestIntegration_AuthFlow(t *testing.T) {
 
 	testRouter.ServeHTTP(rec, req)
 
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("logout: got status %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+func TestIntegration_AuthEmailNormalization(t *testing.T) {
+	body := `{"email":"Mixed.Case@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("register: got status %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	body = `{"email":"mixed.case@EXAMPLE.com","password":"password123"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
 	if rec.Code != http.StatusOK {
-		t.Fatalf("logout: got status %d, want %d", rec.Code, http.StatusOK)
+		t.Fatalf("login: got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	body = `{"email":"MIXED.CASE@example.com","password":"password123"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate register: got status %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
 	}
 }
 
@@ -729,6 +721,108 @@ func TestIntegration_UpdateCardRejectsBlankContent(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("update card: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestIntegration_DeckValidationRejectsBlankTrimmedNames(t *testing.T) {
+	body := `{"email":"blank-deck@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	authCookie := rec.Result().Cookies()[0]
+
+	body = `{"name":"   ","description":"ignored"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("create blank deck: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+
+	body = `{"name":"Valid Deck","description":""}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&deck); err != nil {
+		t.Fatalf("decode deck: %v", err)
+	}
+
+	body = `{"name":"   ","description":"still invalid"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/decks/"+deck.ID, bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("update blank deck: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestIntegration_TagValidationAndDuplicates(t *testing.T) {
+	body := `{"email":"blank-tag@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	authCookie := rec.Result().Cookies()[0]
+
+	body = `{"name":"Tag Deck","description":""}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&deck); err != nil {
+		t.Fatalf("decode deck: %v", err)
+	}
+
+	body = `{"name":"   "}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/tags", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("create blank tag: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+
+	body = `{"name":"Biology"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/tags", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create tag: got status %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/tags", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate tag: got status %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
 	}
 }
 

@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -112,12 +113,17 @@ func (h *TagHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		http.Error(w, "Tag name is required", http.StatusBadRequest)
 		return
 	}
 
 	tag, err := h.tagRepo.Create(r.Context(), deckID, req.Name)
+	if err == repository.ErrInvalidInput {
+		http.Error(w, "Tag name is required", http.StatusBadRequest)
+		return
+	}
 	if err == repository.ErrDuplicate {
 		http.Error(w, "Tag already exists", http.StatusConflict)
 		return

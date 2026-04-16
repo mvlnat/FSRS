@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -11,22 +13,25 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ziyangli/fsrs/backend/internal/handler"
 	"github.com/ziyangli/fsrs/backend/internal/middleware"
 	"github.com/ziyangli/fsrs/backend/internal/repository"
 	"github.com/ziyangli/fsrs/backend/internal/service"
+	dbmigrations "github.com/ziyangli/fsrs/backend/migrations"
 )
 
 func main() {
 	ctx := context.Background()
+	environment := getEnv("ENV", "development")
 
 	// Load config from environment
 	databaseURL := getEnv("DATABASE_URL", "postgres://fsrs:fsrs@localhost:5432/fsrs?sslmode=disable")
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		// Only allow empty JWT_SECRET in development
-		if os.Getenv("ENV") == "production" {
+		if environment == "production" {
 			log.Fatal("JWT_SECRET environment variable is required in production")
 		}
 		jwtSecret = "dev-secret-change-in-production"
@@ -34,6 +39,9 @@ func main() {
 	}
 	port := getEnv("PORT", "8080")
 	secureCookies := os.Getenv("SECURE_COOKIES") == "true"
+	if environment == "production" && !secureCookies {
+		log.Fatal("SECURE_COOKIES must be true in production; enable HTTPS at the proxy before starting the server")
+	}
 	corsOrigins := getEnv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,https://fsrs.ziyang.li,http://161.35.3.230")
 
 	// Connect to database
@@ -142,87 +150,63 @@ func getEnv(key, fallback string) string {
 }
 
 func runMigrations(ctx context.Context, db *repository.DB) error {
-	migration := `
-CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+	scripts, err := dbmigrations.OrderedScripts()
+	if err != nil {
+		return err
+	}
 
-CREATE TABLE IF NOT EXISTS decks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+	for _, script := range scripts {
+		if _, err := db.Pool.Exec(ctx, script.SQL); err != nil {
+			return fmt.Errorf("apply migration %s: %w", script.Name, err)
+		}
+	}
 
-CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id);
+	return ensureCanonicalUserEmails(ctx, db)
+}
 
-CREATE TABLE IF NOT EXISTS cards (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
-    front TEXT NOT NULL,
-    back TEXT NOT NULL,
-    link TEXT DEFAULT '',
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+func ensureCanonicalUserEmails(ctx context.Context, db *repository.DB) error {
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
 
-CREATE INDEX IF NOT EXISTS idx_cards_deck_id ON cards(deck_id);
+	var canonicalEmail string
+	var conflictingEmails string
+	err = tx.QueryRow(ctx, `
+		SELECT
+			LOWER(BTRIM(email)) AS canonical_email,
+			STRING_AGG(email, ', ' ORDER BY created_at) AS conflicting_emails
+		FROM users
+		GROUP BY LOWER(BTRIM(email))
+		HAVING COUNT(*) > 1
+		LIMIT 1
+	`).Scan(&canonicalEmail, &conflictingEmails)
+	if err == nil {
+		return fmt.Errorf(
+			"duplicate user emails must be resolved before startup: canonical email %q maps to multiple rows (%s)",
+			canonicalEmail,
+			conflictingEmails,
+		)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
 
-CREATE TABLE IF NOT EXISTS card_states (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    card_id UUID NOT NULL UNIQUE REFERENCES cards(id) ON DELETE CASCADE,
-    due TIMESTAMPTZ NOT NULL,
-    stability FLOAT DEFAULT 0,
-    difficulty FLOAT DEFAULT 0,
-    elapsed_days INT DEFAULT 0,
-    scheduled_days INT DEFAULT 0,
-    reps INT DEFAULT 0,
-    lapses INT DEFAULT 0,
-    state INT DEFAULT 0,
-    last_review TIMESTAMPTZ
-);
+	if _, err := tx.Exec(ctx, `
+		UPDATE users
+		SET email = LOWER(BTRIM(email))
+		WHERE email <> LOWER(BTRIM(email))
+	`); err != nil {
+		return err
+	}
 
-CREATE INDEX IF NOT EXISTS idx_card_states_due ON card_states(due);
+	if _, err := tx.Exec(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_canonical
+		ON users ((LOWER(BTRIM(email))))
+	`); err != nil {
+		return err
+	}
 
-CREATE TABLE IF NOT EXISTS reviews (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-    rating INT NOT NULL CHECK (rating >= 1 AND rating <= 4),
-    reviewed_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_reviews_card_id ON reviews(card_id);
-
--- Add link column if it doesn't exist (for existing installations)
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cards' AND column_name = 'link') THEN
-        ALTER TABLE cards ADD COLUMN link TEXT DEFAULT '';
-    END IF;
-END $$;
-
-CREATE TABLE IF NOT EXISTS tags (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(deck_id, name)
-);
-
-CREATE INDEX IF NOT EXISTS idx_tags_deck_id ON tags(deck_id);
-
-CREATE TABLE IF NOT EXISTS card_tags (
-    card_id UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-    tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    PRIMARY KEY (card_id, tag_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_card_tags_card_id ON card_tags(card_id);
-CREATE INDEX IF NOT EXISTS idx_card_tags_tag_id ON card_tags(tag_id);
-`
-	_, err := db.Pool.Exec(ctx, migration)
-	return err
+	return tx.Commit(ctx)
 }

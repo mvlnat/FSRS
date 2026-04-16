@@ -121,3 +121,19 @@ func TestFSRSService_Review_StabilityIncreases(t *testing.T) {
 			state.Stability, initialStability)
 	}
 }
+
+func TestFSRSService_Review_UsesPreviousLastReviewForElapsedDays(t *testing.T) {
+	svc := NewFSRSService()
+	cardID := uuid.New()
+
+	state := svc.Review(svc.NewCardState(cardID), 3)
+	past := time.Now().Add(-72 * time.Hour)
+	state.LastReview = &past
+	state.Due = past
+
+	next := svc.Review(state, 3)
+
+	if next.ElapsedDays == 0 {
+		t.Fatalf("ElapsedDays = %d, want value > 0 when last review was in the past", next.ElapsedDays)
+	}
+}

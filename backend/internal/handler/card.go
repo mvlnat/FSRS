@@ -33,6 +33,13 @@ type createCardRequest struct {
 	Link  string `json:"link"`
 }
 
+type updateCardRequest struct {
+	Front  string   `json:"front"`
+	Back   string   `json:"back"`
+	Link   string   `json:"link"`
+	TagIDs []string `json:"tag_ids"`
+}
+
 func (h *CardHandler) ListByDeck(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {
@@ -136,6 +143,12 @@ func (h *CardHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Link, err = normalizeOptionalExternalLink(req.Link)
+	if err != nil {
+		http.Error(w, "Link must be a valid http or https URL", http.StatusBadRequest)
+		return
+	}
+
 	card, err := h.cardRepo.Create(r.Context(), deckID, req.Front, req.Back, req.Link)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -219,7 +232,7 @@ func (h *CardHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req createCardRequest
+	var req updateCardRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
@@ -230,7 +243,49 @@ func (h *CardHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.cardRepo.Update(r.Context(), cardID, req.Front, req.Back, req.Link)
+	req.Link, err = normalizeOptionalExternalLink(req.Link)
+	if err != nil {
+		http.Error(w, "Link must be a valid http or https URL", http.StatusBadRequest)
+		return
+	}
+
+	replaceTags := req.TagIDs != nil
+	tagIDs := make([]uuid.UUID, 0, len(req.TagIDs))
+	if replaceTags {
+		seenTagIDs := make(map[uuid.UUID]struct{}, len(req.TagIDs))
+		for _, idStr := range req.TagIDs {
+			tagID, err := uuid.Parse(idStr)
+			if err != nil {
+				http.Error(w, "Invalid tag ID", http.StatusBadRequest)
+				return
+			}
+			if _, seen := seenTagIDs[tagID]; seen {
+				continue
+			}
+			seenTagIDs[tagID] = struct{}{}
+			tagIDs = append(tagIDs, tagID)
+		}
+	}
+
+	if len(tagIDs) > 0 {
+		tags, err := h.tagRepo.GetByIDs(r.Context(), tagIDs)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if len(tags) != len(tagIDs) {
+			http.Error(w, "Invalid tag ID", http.StatusBadRequest)
+			return
+		}
+		for _, tag := range tags {
+			if tag.DeckID != card.DeckID {
+				http.Error(w, "Tags must belong to the same deck as the card", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	updated, err := h.cardRepo.UpdateWithTags(r.Context(), cardID, req.Front, req.Back, req.Link, tagIDs, replaceTags)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return

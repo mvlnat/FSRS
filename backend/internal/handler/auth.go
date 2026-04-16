@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -46,12 +47,18 @@ type authResponse struct {
 	Email string `json:"email"`
 }
 
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	req.Email = normalizeEmail(req.Email)
 
 	if req.Email == "" || req.Password == "" {
 		http.Error(w, "Email and password are required", http.StatusBadRequest)
@@ -90,6 +97,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(authResponse{
 		ID:    user.ID.String(),
 		Email: user.Email,
@@ -102,6 +110,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	req.Email = normalizeEmail(req.Email)
 
 	user, err := h.userRepo.GetByEmail(r.Context(), req.Email)
 	if err == repository.ErrNotFound {
@@ -141,7 +151,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 	})
 
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
