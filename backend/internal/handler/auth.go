@@ -99,6 +99,22 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
+func validateEmail(email string) error {
+	if len(email) > maxEmailLength {
+		return authValidationError("Email must be 255 characters or fewer")
+	}
+	if !emailRegex.MatchString(email) {
+		return authValidationError("Invalid email format")
+	}
+	return nil
+}
+
+type authValidationError string
+
+func (e authValidationError) Error() string {
+	return string(e)
+}
+
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if !decodeStrictJSONBody(w, r, &req, defaultJSONBodyLimit) {
@@ -111,14 +127,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Email and password are required", http.StatusBadRequest)
 		return
 	}
-
-	if len(req.Email) > maxEmailLength {
-		http.Error(w, "Email must be 255 characters or fewer", http.StatusBadRequest)
-		return
-	}
-
-	if !emailRegex.MatchString(req.Email) {
-		http.Error(w, "Invalid email format", http.StatusBadRequest)
+	if err := validateEmail(req.Email); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -160,6 +170,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Email = normalizeEmail(req.Email)
+	if req.Email == "" || req.Password == "" {
+		http.Error(w, "Email and password are required", http.StatusBadRequest)
+		return
+	}
+	if err := validateEmail(req.Email); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if !h.allowEmailThrottle(w, r, loginEmailScope, req.Email, loginEmailLimit, loginEmailWindow, loginEmailBlockDuration) {
 		return
 	}

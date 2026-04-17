@@ -10,6 +10,9 @@ export function normalizeOptionalExternalLink(raw: string | null | undefined): s
     if (protocol !== 'http:' && protocol !== 'https:') {
       return null;
     }
+    if (parsed.username || parsed.password) {
+      return null;
+    }
 
     return parsed.toString();
   } catch {
