@@ -43,6 +43,44 @@ const deckWithStats: DeckWithStats = {
   },
 };
 
+function mockDownloadApis() {
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  const createObjectURL = vi.fn((_: Blob | MediaSource) => 'blob:deck-export');
+  const revokeObjectURL = vi.fn((_: string) => undefined);
+  const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    writable: true,
+    value: createObjectURL,
+  });
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    writable: true,
+    value: revokeObjectURL,
+  });
+
+  return {
+    createObjectURL,
+    revokeObjectURL,
+    clickSpy,
+    restore() {
+      clickSpy.mockRestore();
+      Object.defineProperty(URL, 'createObjectURL', {
+        configurable: true,
+        writable: true,
+        value: originalCreateObjectURL,
+      });
+      Object.defineProperty(URL, 'revokeObjectURL', {
+        configurable: true,
+        writable: true,
+        value: originalRevokeObjectURL,
+      });
+    },
+  };
+}
+
 function renderDecks() {
   return render(
     <MemoryRouter>
@@ -80,6 +118,59 @@ describe('Decks', () => {
     expect(screen.queryByText('Failed to load decks')).not.toBeInTheDocument();
   });
 
+  it('imports a deck file and reloads the deck list', async () => {
+    const user = userEvent.setup();
+    const importedDeck: DeckWithStats = {
+      id: 'deck-2',
+      user_id: 'user-1',
+      name: 'Imported Deck',
+      description: 'Imported cards',
+      created_at: '2026-04-14T00:05:00Z',
+      stats: {
+        total: 1,
+        new: 1,
+        due: 1,
+        learning: 0,
+      },
+    };
+    const importPayload: api.DeckExport = {
+      name: 'Imported Deck',
+      description: 'Imported cards',
+      cards: [
+        {
+          front: 'Imported question',
+          back: 'Imported answer',
+          link: 'https://example.com/imported',
+        },
+      ],
+    };
+
+    mockedApi.getDecks.mockResolvedValueOnce([]).mockResolvedValueOnce([importedDeck]);
+    mockedApi.importDeck.mockResolvedValue(importedDeck);
+
+    renderDecks();
+
+    await screen.findByText('No decks yet. Create your first deck to get started!');
+
+    const fileInput = document.querySelector('input[type="file"]');
+    if (!(fileInput instanceof HTMLInputElement)) {
+      throw new Error('expected hidden import file input');
+    }
+
+    const file = new File([JSON.stringify(importPayload)], 'imported-deck.json', {
+      type: 'application/json',
+    });
+
+    await user.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(mockedApi.importDeck).toHaveBeenCalledWith(importPayload);
+    });
+    await screen.findByText('Imported Deck');
+    expect(screen.getByText('Total: 1')).toBeInTheDocument();
+    expect(fileInput.value).toBe('');
+  });
+
   it('does not submit whitespace-only deck names', async () => {
     const user = userEvent.setup();
 
@@ -93,6 +184,53 @@ describe('Decks', () => {
 
     expect(screen.getByRole('button', { name: 'Create Deck' })).toBeDisabled();
     expect(mockedApi.createDeck).not.toHaveBeenCalled();
+  });
+
+  it('exports a deck as a downloadable json file', async () => {
+    const user = userEvent.setup();
+    const download = mockDownloadApis();
+    const exportPayload: api.DeckExport = {
+      name: 'Biology',
+      description: 'Cells',
+      cards: [
+        {
+          front: 'What is a cell?',
+          back: 'The basic unit of life.',
+          link: 'https://example.com/cell',
+        },
+      ],
+    };
+
+    mockedApi.getDecks.mockResolvedValue([deckWithStats]);
+    mockedApi.exportDeck.mockResolvedValue(exportPayload);
+
+    try {
+      renderDecks();
+
+      await screen.findByText('Biology');
+      await user.click(screen.getByRole('button', { name: 'Export' }));
+
+      await waitFor(() => {
+        expect(mockedApi.exportDeck).toHaveBeenCalledWith('deck-1');
+      });
+      expect(download.createObjectURL).toHaveBeenCalledTimes(1);
+
+      const blob = download.createObjectURL.mock.calls[0]?.[0];
+      if (!(blob instanceof Blob)) {
+        throw new Error('expected export download blob');
+      }
+      expect(await blob.text()).toBe(JSON.stringify(exportPayload, null, 2));
+
+      await waitFor(() => {
+        expect(download.clickSpy).toHaveBeenCalledTimes(1);
+      });
+      const [anchor] = download.clickSpy.mock.instances as unknown as HTMLAnchorElement[];
+      expect(anchor.download).toBe('Biology.json');
+      expect(anchor.href).toBe('blob:deck-export');
+      expect(download.revokeObjectURL).toHaveBeenCalledWith('blob:deck-export');
+    } finally {
+      download.restore();
+    }
   });
 
   it('renders the due calendar with per-day deck details', async () => {
