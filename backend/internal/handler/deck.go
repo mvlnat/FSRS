@@ -13,14 +13,15 @@ import (
 
 // sanitizeFilename removes or replaces characters that could cause issues in Content-Disposition
 var unsafeFilenameChars = regexp.MustCompile(`[^\w\s\-\.]`)
+var repeatedUnderscores = regexp.MustCompile(`_+`)
+var repeatedWhitespace = regexp.MustCompile(`\s+`)
 
 func sanitizeFilename(name string) string {
-	// Replace unsafe characters with underscores
-	safe := unsafeFilenameChars.ReplaceAllString(name, "_")
-	// Collapse multiple underscores
-	safe = strings.ReplaceAll(safe, "__", "_")
-	// Trim leading/trailing underscores and spaces
-	safe = strings.Trim(safe, "_ ")
+	safe := repeatedWhitespace.ReplaceAllString(name, " ")
+	safe = unsafeFilenameChars.ReplaceAllString(safe, "_")
+	safe = repeatedUnderscores.ReplaceAllString(safe, "_")
+	safe = strings.TrimSpace(safe)
+	safe = strings.Trim(safe, " ._-")
 	if safe == "" {
 		safe = "deck"
 	}
