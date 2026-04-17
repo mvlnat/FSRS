@@ -691,6 +691,98 @@ func TestIntegration_SetCardTagsRejectsTagsFromAnotherDeck(t *testing.T) {
 	}
 }
 
+func TestIntegration_SetCardTagsRejectsMissingTagIDsWithoutClearingExistingTags(t *testing.T) {
+	authCookie := registerAndLoginTestUser(t, "missing-tag-ids@example.com", "password123")
+
+	body := `{"name":"Tagged Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&deck); err != nil {
+		t.Fatalf("decode deck: %v", err)
+	}
+
+	body = `{"front":"Tagged question","back":"Tagged answer"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var card struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&card); err != nil {
+		t.Fatalf("decode card: %v", err)
+	}
+
+	body = `{"name":"Biology"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/tags", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var tag struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&tag); err != nil {
+		t.Fatalf("decode tag: %v", err)
+	}
+
+	body = `{"tag_ids":["` + tag.ID + `"]}`
+	req = httptest.NewRequest(http.MethodPut, "/api/cards/"+card.ID+"/tags", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set initial card tags: got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPut, "/api/cards/"+card.ID+"/tags", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("set card tags with missing tag_ids: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/decks/"+deck.ID+"/cards", nil)
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list cards after invalid set tags: got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var cards []struct {
+		ID   string `json:"id"`
+		Tags []struct {
+			ID string `json:"id"`
+		} `json:"tags"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&cards); err != nil {
+		t.Fatalf("decode cards: %v", err)
+	}
+	if len(cards) != 1 {
+		t.Fatalf("got %d cards, want 1", len(cards))
+	}
+	if len(cards[0].Tags) != 1 || cards[0].Tags[0].ID != tag.ID {
+		t.Fatalf("expected existing tag assignment to be preserved, got %#v", cards[0].Tags)
+	}
+}
+
 func TestIntegration_UpdateCardRejectsBlankContent(t *testing.T) {
 	authCookie := registerAndLoginTestUser(t, "blank-card@example.com", "password123")
 
