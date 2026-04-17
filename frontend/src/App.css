@@ -484,6 +484,7 @@ button:disabled {
   border: 1px solid #eadbc0;
   border-radius: 24px;
   padding: 28px 32px;
+  margin-top: 32px;
   margin-bottom: 32px;
   box-shadow: 0 20px 40px rgba(112, 87, 32, 0.08);
 }

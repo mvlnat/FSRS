@@ -481,8 +481,8 @@ export function Decks() {
                   aria-pressed={selectedDateKey === cell.dateKey}
                 >
                   <span className="due-calendar-day-number">{cell.date.getDate()}</span>
-                  <span className="due-calendar-day-count">
-                    {cell.total > 0 ? formatDueCount(cell.total) : 'No due cards'}
+                  <span className="due-calendar-day-count" aria-hidden="true">
+                    {cell.total > 0 ? formatDueCount(cell.total) : ''}
                   </span>
                 </button>
               ))}
