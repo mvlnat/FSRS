@@ -1033,11 +1033,14 @@ button:disabled {
   display: flex;
   gap: 12px;
   align-items: center;
+  min-width: 0;
 }
 
 .search-box {
   position: relative;
   flex: 1;
+  min-width: 0;
+  width: 100%;
   max-width: 300px;
 }
 
@@ -1118,11 +1121,19 @@ button:disabled {
   }
 
   .cards-toolbar-right {
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
   }
 
+  .cards-toolbar-right > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .tag-filter-select,
   .sort-select {
-    flex: 1;
+    max-width: 100%;
   }
 }
 
