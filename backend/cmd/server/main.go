@@ -24,6 +24,10 @@ import (
 const (
 	defaultDevelopmentJWTSecret = "dev-secret-change-in-production"
 	minJWTSecretBytes           = 32
+	authIPScope                 = "auth_ip"
+	authIPLimit                 = 20
+	authIPWindow                = 5 * time.Minute
+	authIPBlockDuration         = 15 * time.Minute
 	readHeaderTimeout           = 5 * time.Second
 	readTimeout                 = 15 * time.Second
 	writeTimeout                = 30 * time.Second
@@ -72,6 +76,7 @@ func main() {
 
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db)
+	authThrottleRepo := repository.NewAuthThrottleRepository(db)
 	deckRepo := repository.NewDeckRepository(db)
 	cardRepo := repository.NewCardRepository(db)
 	tagRepo := repository.NewTagRepository(db)
@@ -81,6 +86,7 @@ func main() {
 
 	// Initialize handlers
 	authHandler := handler.NewAuthHandler(userRepo, jwtSecret, secureCookies)
+	authHandler.SetAuthThrottle(authThrottleRepo)
 	deckHandler := handler.NewDeckHandler(deckRepo, cardRepo)
 	cardHandler := handler.NewCardHandler(cardRepo, deckRepo, tagRepo)
 	studyHandler := handler.NewStudyHandler(cardRepo, deckRepo, fsrsService)
@@ -89,8 +95,13 @@ func main() {
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(jwtSecret, userRepo)
 	browserTrustMiddleware := middleware.NewBrowserTrustMiddleware(allowedOrigins)
-	// 10 requests per minute for auth endpoints
-	authRateLimiter := middleware.NewRateLimiter(10, time.Minute)
+	authRateLimiter := middleware.NewAuthRateLimitMiddleware(
+		authThrottleRepo,
+		authIPScope,
+		authIPLimit,
+		authIPWindow,
+		authIPBlockDuration,
+	)
 	authRateLimiter.SetTrustProxy(os.Getenv("TRUST_PROXY_HEADERS") == "true")
 
 	// Setup router

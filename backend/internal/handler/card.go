@@ -103,7 +103,7 @@ func (h *CardHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createCardRequest
-	if !decodeJSONBody(w, r, &req, 0) {
+	if !decodeStrictJSONBody(w, r, &req, 0) {
 		return
 	}
 
@@ -164,7 +164,7 @@ func (h *CardHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updateCardRequest
-	if !decodeJSONBody(w, r, &req, 0) {
+	if !decodeStrictJSONBody(w, r, &req, 0) {
 		return
 	}
 

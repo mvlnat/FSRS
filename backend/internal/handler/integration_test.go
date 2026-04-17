@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -65,6 +66,7 @@ func TestMain(m *testing.M) {
 
 func setupTestSchema(ctx context.Context) error {
 	if _, err := testDB.Pool.Exec(ctx, `
+		DROP TABLE IF EXISTS auth_throttles CASCADE;
 		DROP TABLE IF EXISTS reviews CASCADE;
 		DROP TABLE IF EXISTS card_states CASCADE;
 		DROP TABLE IF EXISTS card_tags CASCADE;
@@ -82,6 +84,7 @@ func setupTestSchema(ctx context.Context) error {
 
 func cleanupTestDB(ctx context.Context) {
 	testDB.Pool.Exec(ctx, `
+		DROP TABLE IF EXISTS auth_throttles CASCADE;
 		DROP TABLE IF EXISTS reviews CASCADE;
 		DROP TABLE IF EXISTS card_states CASCADE;
 		DROP TABLE IF EXISTS card_tags CASCADE;
@@ -95,24 +98,36 @@ func cleanupTestDB(ctx context.Context) {
 
 func setupTestRouter() *chi.Mux {
 	userRepo := repository.NewUserRepository(testDB)
+	authThrottleRepo := repository.NewAuthThrottleRepository(testDB)
 	deckRepo := repository.NewDeckRepository(testDB)
 	cardRepo := repository.NewCardRepository(testDB)
 	tagRepo := repository.NewTagRepository(testDB)
 	fsrsService := service.NewFSRSService()
 
 	authHandler := handler.NewAuthHandler(userRepo, testJWTSecret, false)
+	authHandler.SetAuthThrottle(authThrottleRepo)
 	deckHandler := handler.NewDeckHandler(deckRepo, cardRepo)
 	cardHandler := handler.NewCardHandler(cardRepo, deckRepo, tagRepo)
 	studyHandler := handler.NewStudyHandler(cardRepo, deckRepo, fsrsService)
 	tagHandler := handler.NewTagHandler(tagRepo, deckRepo, cardRepo)
 
 	authMiddleware := middleware.NewAuthMiddleware(testJWTSecret, userRepo)
+	authRateLimiter := middleware.NewAuthRateLimitMiddleware(
+		authThrottleRepo,
+		"auth_ip_integration_test",
+		1000,
+		time.Minute,
+		time.Minute,
+	)
 
 	r := chi.NewRouter()
 
 	// Public routes
-	r.Post("/api/auth/register", authHandler.Register)
-	r.Post("/api/auth/login", authHandler.Login)
+	r.Group(func(r chi.Router) {
+		r.Use(authRateLimiter.Handler)
+		r.Post("/api/auth/register", authHandler.Register)
+		r.Post("/api/auth/login", authHandler.Login)
+	})
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
@@ -755,6 +770,35 @@ func TestIntegration_DeckValidationRejectsBlankTrimmedNames(t *testing.T) {
 	}
 }
 
+func TestIntegration_DeckUpdateRejectsUnknownFields(t *testing.T) {
+	authCookie := registerAndLoginTestUser(t, "deck-unknown@example.com", "password123")
+
+	body := `{"name":"Known Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&deck); err != nil {
+		t.Fatalf("decode deck: %v", err)
+	}
+
+	body = `{"name":"Updated Deck","description":"","extra":"value"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/decks/"+deck.ID, bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("update deck with unknown field: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
 func TestIntegration_TagValidationAndDuplicates(t *testing.T) {
 	authCookie := registerAndLoginTestUser(t, "blank-tag@example.com", "password123")
 
@@ -802,6 +846,128 @@ func TestIntegration_TagValidationAndDuplicates(t *testing.T) {
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("duplicate tag: got status %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+}
+
+func TestIntegration_CardHandlersRejectUnknownFields(t *testing.T) {
+	authCookie := registerAndLoginTestUser(t, "card-unknown@example.com", "password123")
+
+	body := `{"name":"Card Unknown Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&deck); err != nil {
+		t.Fatalf("decode deck: %v", err)
+	}
+
+	body = `{"front":"Question","back":"Answer","extra":"value"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("create card with unknown field: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+
+	body = `{"front":"Question","back":"Answer"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var card struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&card); err != nil {
+		t.Fatalf("decode card: %v", err)
+	}
+
+	body = `{"front":"Updated","back":"Answer","link":"","extra":"value"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/cards/"+card.ID, bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("update card with unknown field: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestIntegration_TagHandlersRejectUnknownFields(t *testing.T) {
+	authCookie := registerAndLoginTestUser(t, "tag-unknown@example.com", "password123")
+
+	body := `{"name":"Tag Unknown Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&deck); err != nil {
+		t.Fatalf("decode deck: %v", err)
+	}
+
+	body = `{"front":"Question","back":"Answer"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var card struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&card); err != nil {
+		t.Fatalf("decode card: %v", err)
+	}
+
+	body = `{"name":"Biology","extra":"value"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/tags", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("create tag with unknown field: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+
+	body = `{"name":"Biology"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/tags", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var tag struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&tag); err != nil {
+		t.Fatalf("decode tag: %v", err)
+	}
+
+	body = `{"tag_ids":["` + tag.ID + `"],"extra":"value"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/cards/"+card.ID+"/tags", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("set card tags with unknown field: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
 }
 

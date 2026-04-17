@@ -70,7 +70,7 @@ func (h *StudyHandler) Review(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req reviewRequest
-	if !decodeJSONBody(w, r, &req, 0) {
+	if !decodeStrictJSONBody(w, r, &req, 0) {
 		return
 	}
 

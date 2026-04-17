@@ -83,7 +83,7 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createDeckRequest
-	if !decodeJSONBody(w, r, &req, 0) {
+	if !decodeStrictJSONBody(w, r, &req, 0) {
 		return
 	}
 
@@ -141,7 +141,7 @@ func (h *DeckHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createDeckRequest
-	if !decodeJSONBody(w, r, &req, 0) {
+	if !decodeStrictJSONBody(w, r, &req, 0) {
 		return
 	}
 
@@ -272,7 +272,7 @@ func (h *DeckHandler) Import(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var export DeckExport
-	if !decodeJSONBody(w, r, &export, 10*1024*1024) {
+	if !decodeStrictJSONBody(w, r, &export, 10*1024*1024) {
 		return
 	}
 

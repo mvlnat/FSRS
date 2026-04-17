@@ -90,7 +90,7 @@ func (h *TagHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createTagRequest
-	if !decodeJSONBody(w, r, &req, 0) {
+	if !decodeStrictJSONBody(w, r, &req, 0) {
 		return
 	}
 
@@ -159,7 +159,7 @@ func (h *TagHandler) SetCardTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req setCardTagsRequest
-	if !decodeJSONBody(w, r, &req, 0) {
+	if !decodeStrictJSONBody(w, r, &req, 0) {
 		return
 	}
 

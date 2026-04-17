@@ -2,12 +2,77 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/ziyangli/fsrs/backend/internal/model"
+	"github.com/ziyangli/fsrs/backend/internal/repository"
 )
+
+type fakeAuthUserStore struct {
+	user *model.User
+}
+
+func (f fakeAuthUserStore) Create(_ context.Context, email, passwordHash string) (*model.User, error) {
+	return &model.User{
+		ID:           uuid.New(),
+		Email:        email,
+		PasswordHash: passwordHash,
+	}, nil
+}
+
+func (f fakeAuthUserStore) GetByEmail(_ context.Context, email string) (*model.User, error) {
+	if f.user != nil && f.user.Email == email {
+		return f.user, nil
+	}
+	return nil, repository.ErrNotFound
+}
+
+func (f fakeAuthUserStore) GetByID(_ context.Context, _ uuid.UUID) (*model.User, error) {
+	return f.user, nil
+}
+
+func (f fakeAuthUserStore) IncrementTokenVersion(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+type fakeHandlerAuthThrottle struct {
+	allowFn func(
+		ctx context.Context,
+		scope string,
+		key string,
+		limit int,
+		window time.Duration,
+		blockDuration time.Duration,
+	) (bool, time.Duration, error)
+	resetFn func(ctx context.Context, scope string, key string) error
+}
+
+func (f fakeHandlerAuthThrottle) Allow(
+	ctx context.Context,
+	scope string,
+	key string,
+	limit int,
+	window time.Duration,
+	blockDuration time.Duration,
+) (bool, time.Duration, error) {
+	return f.allowFn(ctx, scope, key, limit, window, blockDuration)
+}
+
+func (f fakeHandlerAuthThrottle) Reset(ctx context.Context, scope string, key string) error {
+	if f.resetFn == nil {
+		return nil
+	}
+	return f.resetFn(ctx, scope, key)
+}
 
 func TestNormalizeEmail(t *testing.T) {
 	got := normalizeEmail("  Test.User+alias@Example.COM ")
@@ -68,6 +133,144 @@ func TestAuthHandler_Login_InvalidJSON(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestAuthHandler_Login_RejectsEmailThrottleLimit(t *testing.T) {
+	h := &AuthHandler{
+		jwtSecret: []byte("test-secret"),
+		authThrottle: fakeHandlerAuthThrottle{
+			allowFn: func(_ context.Context, scope, key string, limit int, window, blockDuration time.Duration) (bool, time.Duration, error) {
+				if scope != loginEmailScope {
+					t.Fatalf("scope = %q, want %q", scope, loginEmailScope)
+				}
+				if key != "test@example.com" {
+					t.Fatalf("key = %q, want %q", key, "test@example.com")
+				}
+				if limit != loginEmailLimit {
+					t.Fatalf("limit = %d, want %d", limit, loginEmailLimit)
+				}
+				if window != loginEmailWindow {
+					t.Fatalf("window = %s, want %s", window, loginEmailWindow)
+				}
+				if blockDuration != loginEmailBlockDuration {
+					t.Fatalf("block duration = %s, want %s", blockDuration, loginEmailBlockDuration)
+				}
+				return false, 2 * time.Minute, nil
+			},
+		},
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/login",
+		bytes.NewReader([]byte(`{"email":"test@example.com","password":"password123"}`)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusTooManyRequests)
+	}
+	if rec.Header().Get("Retry-After") != "120" {
+		t.Fatalf("Retry-After = %q, want %q", rec.Header().Get("Retry-After"), "120")
+	}
+}
+
+func TestAuthHandler_Register_RejectsEmailThrottleLimit(t *testing.T) {
+	h := &AuthHandler{
+		jwtSecret: []byte("test-secret"),
+		authThrottle: fakeHandlerAuthThrottle{
+			allowFn: func(_ context.Context, scope, key string, limit int, window, blockDuration time.Duration) (bool, time.Duration, error) {
+				if scope != registerEmailScope {
+					t.Fatalf("scope = %q, want %q", scope, registerEmailScope)
+				}
+				if key != "test@example.com" {
+					t.Fatalf("key = %q, want %q", key, "test@example.com")
+				}
+				if limit != registerEmailLimit {
+					t.Fatalf("limit = %d, want %d", limit, registerEmailLimit)
+				}
+				if window != registerEmailWindow {
+					t.Fatalf("window = %s, want %s", window, registerEmailWindow)
+				}
+				if blockDuration != registerEmailBlockDuration {
+					t.Fatalf("block duration = %s, want %s", blockDuration, registerEmailBlockDuration)
+				}
+				return false, 15 * time.Minute, nil
+			},
+		},
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/register",
+		bytes.NewReader([]byte(`{"email":"Test@example.com","password":"password123"}`)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Register(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusTooManyRequests)
+	}
+	if rec.Header().Get("Retry-After") != "900" {
+		t.Fatalf("Retry-After = %q, want %q", rec.Header().Get("Retry-After"), "900")
+	}
+}
+
+func TestAuthHandler_Login_ResetsEmailThrottleOnSuccess(t *testing.T) {
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("GenerateFromPassword: %v", err)
+	}
+
+	var resetScope string
+	var resetKey string
+
+	h := &AuthHandler{
+		userRepo: fakeAuthUserStore{
+			user: &model.User{
+				ID:           uuid.New(),
+				Email:        "test@example.com",
+				PasswordHash: string(passwordHash),
+				TokenVersion: 3,
+			},
+		},
+		jwtSecret: []byte("test-secret"),
+		authThrottle: fakeHandlerAuthThrottle{
+			allowFn: func(_ context.Context, _ string, _ string, _ int, _ time.Duration, _ time.Duration) (bool, time.Duration, error) {
+				return true, 0, nil
+			},
+			resetFn: func(_ context.Context, scope string, key string) error {
+				resetScope = scope
+				resetKey = key
+				return nil
+			},
+		},
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/login",
+		bytes.NewReader([]byte(`{"email":"Test@example.com","password":"password123"}`)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if resetScope != loginEmailScope {
+		t.Fatalf("reset scope = %q, want %q", resetScope, loginEmailScope)
+	}
+	if resetKey != "test@example.com" {
+		t.Fatalf("reset key = %q, want %q", resetKey, "test@example.com")
 	}
 }
 

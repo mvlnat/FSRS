@@ -109,3 +109,47 @@ func TestDeckHandler_Import_RejectsInvalidCardLink(t *testing.T) {
 		t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 }
+
+func TestDeckHandler_CreateRejectsUnknownFields(t *testing.T) {
+	h := &DeckHandler{}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/decks",
+		bytes.NewReader([]byte(`{"name":"Deck","extra":"value"}`)),
+	)
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uuid.New()))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Create(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "unknown fields") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+}
+
+func TestDeckHandler_ImportRejectsUnknownFields(t *testing.T) {
+	h := &DeckHandler{}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/decks/import",
+		bytes.NewReader([]byte(`{"name":"Imported","cards":[],"extra":"value"}`)),
+	)
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uuid.New()))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Import(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "unknown fields") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+}
