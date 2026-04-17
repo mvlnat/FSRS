@@ -108,6 +108,17 @@ function formatReviewCount(value: number): string {
   return value.toLocaleString();
 }
 
+function sanitizeDownloadFilename(name: string): string {
+  const safe = name
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\s.-]/g, '_')
+    .replace(/_+/g, '_')
+    .trim()
+    .replace(/^[ ._-]+|[ ._-]+$/g, '');
+
+  return safe || 'deck';
+}
+
 function formatAvgRating(value: number): string {
   if (value <= 0) {
     return '—';
@@ -265,9 +276,10 @@ export function Decks() {
       const data = await api.exportDeck(id);
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
+      const filename = sanitizeDownloadFilename(data.name || name);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${name}.json`;
+      a.download = `${filename}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {

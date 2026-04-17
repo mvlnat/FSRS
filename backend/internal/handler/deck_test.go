@@ -153,3 +153,35 @@ func TestDeckHandler_ImportRejectsUnknownFields(t *testing.T) {
 		t.Fatalf("unexpected response body: %s", rec.Body.String())
 	}
 }
+
+func TestSanitizeFilename(t *testing.T) {
+	testCases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "replaces unsafe path-like characters",
+			in:   "../Biology:/Deck?",
+			want: "Biology_Deck",
+		},
+		{
+			name: "strips hidden-file style prefix",
+			in:   ".env",
+			want: "env",
+		},
+		{
+			name: "falls back for empty sanitized names",
+			in:   "???",
+			want: "deck",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sanitizeFilename(tc.in); got != tc.want {
+				t.Fatalf("sanitizeFilename(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}

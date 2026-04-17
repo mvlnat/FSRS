@@ -191,8 +191,9 @@ describe('Decks', () => {
   it('exports a deck as a downloadable json file', async () => {
     const user = userEvent.setup();
     const download = mockDownloadApis();
+    const deckName = '../Biology:/Deck?';
     const exportPayload: api.DeckExport = {
-      name: 'Biology',
+      name: deckName,
       description: 'Cells',
       cards: [
         {
@@ -203,13 +204,18 @@ describe('Decks', () => {
       ],
     };
 
-    mockedApi.getDecks.mockResolvedValue([deckWithStats]);
+    mockedApi.getDecks.mockResolvedValue([
+      {
+        ...deckWithStats,
+        name: deckName,
+      },
+    ]);
     mockedApi.exportDeck.mockResolvedValue(exportPayload);
 
     try {
       renderDecks();
 
-      await screen.findByText('Biology');
+      await screen.findByText(deckName);
       await user.click(screen.getByRole('button', { name: 'Export' }));
 
       await waitFor(() => {
@@ -227,7 +233,7 @@ describe('Decks', () => {
         expect(download.clickSpy).toHaveBeenCalledTimes(1);
       });
       const [anchor] = download.clickSpy.mock.instances as unknown as HTMLAnchorElement[];
-      expect(anchor.download).toBe('Biology.json');
+      expect(anchor.download).toBe('Biology_Deck.json');
       expect(anchor.href).toBe('blob:deck-export');
       expect(download.revokeObjectURL).toHaveBeenCalledWith('blob:deck-export');
     } finally {
