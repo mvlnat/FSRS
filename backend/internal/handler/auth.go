@@ -252,6 +252,14 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *AuthHandler) tokenCookieName() string {
+	if h.secureCookies {
+		return middleware.SecureTokenCookieName
+	}
+
+	return middleware.LegacyTokenCookieName
+}
+
 func (h *AuthHandler) setTokenCookie(w http.ResponseWriter, userID string, tokenVersion int) error {
 	expiresAt := time.Now().Add(tokenLifetime)
 
@@ -270,7 +278,7 @@ func (h *AuthHandler) setTokenCookie(w http.ResponseWriter, userID string, token
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     "token",
+		Name:     h.tokenCookieName(),
 		Value:    tokenString,
 		Path:     "/",
 		HttpOnly: true,
@@ -283,16 +291,23 @@ func (h *AuthHandler) setTokenCookie(w http.ResponseWriter, userID string, token
 }
 
 func (h *AuthHandler) clearTokenCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "token",
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   h.secureCookies,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   -1,
-		Expires:  time.Unix(0, 0),
-	})
+	names := []string{h.tokenCookieName()}
+	if h.secureCookies {
+		names = append(names, middleware.LegacyTokenCookieName)
+	}
+
+	for _, name := range names {
+		http.SetCookie(w, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   h.secureCookies,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   -1,
+			Expires:  time.Unix(0, 0),
+		})
+	}
 }
 
 func (h *AuthHandler) allowEmailThrottle(

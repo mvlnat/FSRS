@@ -46,7 +46,7 @@ func TestAuthMiddleware_AllowsCurrentToken(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	req.AddCookie(&http.Cookie{Name: "token", Value: token})
+	req.AddCookie(&http.Cookie{Name: LegacyTokenCookieName, Value: token})
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -71,13 +71,40 @@ func TestAuthMiddleware_RejectsRevokedToken(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	req.AddCookie(&http.Cookie{Name: "token", Value: token})
+	req.AddCookie(&http.Cookie{Name: SecureTokenCookieName, Value: token})
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("got status %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestAuthMiddleware_PrefersSecureCookieOverLegacy(t *testing.T) {
+	userID := uuid.New()
+	validSecureToken := signedToken(t, "test-secret", userID.String(), 2)
+	invalidLegacyToken := "invalid-token"
+	authMiddleware := NewAuthMiddleware("test-secret", fakeUserReader{
+		user: &model.User{
+			ID:           userID,
+			TokenVersion: 2,
+		},
+	})
+
+	handler := authMiddleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.AddCookie(&http.Cookie{Name: LegacyTokenCookieName, Value: invalidLegacyToken})
+	req.AddCookie(&http.Cookie{Name: SecureTokenCookieName, Value: validSecureToken})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusOK)
 	}
 }
 

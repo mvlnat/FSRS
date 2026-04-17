@@ -14,7 +14,11 @@ import (
 
 type contextKey string
 
-const UserIDKey contextKey = "userID"
+const (
+	UserIDKey             contextKey = "userID"
+	LegacyTokenCookieName            = "token"
+	SecureTokenCookieName            = "__Host-token"
+)
 
 type UserReader interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.User, error)
@@ -39,12 +43,7 @@ func NewAuthMiddleware(jwtSecret string, userRepo UserReader) *AuthMiddleware {
 
 func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Try cookie first
-		var tokenString string
-		cookie, err := r.Cookie("token")
-		if err == nil {
-			tokenString = cookie.Value
-		}
+		tokenString := tokenFromRequest(r)
 
 		// Fall back to Authorization header
 		if tokenString == "" {
@@ -88,6 +87,17 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), UserIDKey, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func tokenFromRequest(r *http.Request) string {
+	for _, cookieName := range []string{SecureTokenCookieName, LegacyTokenCookieName} {
+		cookie, err := r.Cookie(cookieName)
+		if err == nil {
+			return cookie.Value
+		}
+	}
+
+	return ""
 }
 
 func GetUserID(ctx context.Context) (uuid.UUID, bool) {

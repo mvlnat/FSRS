@@ -203,7 +203,7 @@ func loginTestUser(t *testing.T, email, password string) *http.Cookie {
 		t.Fatalf("login: got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	authCookie := findCookie(rec.Result().Cookies(), "token")
+	authCookie := findCookie(rec.Result().Cookies(), middleware.LegacyTokenCookieName)
 	if authCookie == nil {
 		t.Fatal("expected auth cookie after login")
 	}
@@ -231,7 +231,7 @@ func TestIntegration_AuthFlow(t *testing.T) {
 		t.Fatalf("register: got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
 	}
 
-	if findCookie(rec.Result().Cookies(), "token") != nil {
+	if findCookie(rec.Result().Cookies(), middleware.LegacyTokenCookieName) != nil {
 		t.Fatal("did not expect auth cookie after register")
 	}
 

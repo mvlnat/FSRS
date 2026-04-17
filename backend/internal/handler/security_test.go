@@ -73,7 +73,7 @@ func TestMiddleware_RequiresAuth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 			if tt.cookie != "" {
-				req.AddCookie(&http.Cookie{Name: "token", Value: tt.cookie})
+				req.AddCookie(&http.Cookie{Name: middleware.LegacyTokenCookieName, Value: tt.cookie})
 			}
 			if tt.authHeader != "" {
 				req.Header.Set("Authorization", tt.authHeader)
@@ -123,9 +123,12 @@ func TestAuthHandler_SetTokenCookieUsesExpectedClaimsAndFlags(t *testing.T) {
 		t.Fatalf("setTokenCookie: %v", err)
 	}
 
-	tokenCookie := findCookie(rec.Result().Cookies(), "token")
+	tokenCookie := findCookie(rec.Result().Cookies(), middleware.SecureTokenCookieName)
 	if tokenCookie == nil {
 		t.Fatal("expected token cookie to be set")
+	}
+	if legacyCookie := findCookie(rec.Result().Cookies(), middleware.LegacyTokenCookieName); legacyCookie != nil {
+		t.Fatalf("did not expect legacy token cookie during secure issuance, got %q", legacyCookie.Name)
 	}
 	if tokenCookie.Path != "/" {
 		t.Fatalf("cookie path = %q, want /", tokenCookie.Path)
@@ -173,7 +176,7 @@ func TestAuthHandler_LogoutClearsCookie(t *testing.T) {
 
 	h.Logout(rec, req)
 
-	tokenCookie := findCookie(rec.Result().Cookies(), "token")
+	tokenCookie := findCookie(rec.Result().Cookies(), middleware.SecureTokenCookieName)
 	if tokenCookie == nil {
 		t.Fatal("expected token cookie to be set")
 	}
@@ -192,10 +195,18 @@ func TestAuthHandler_LogoutClearsCookie(t *testing.T) {
 	if !tokenCookie.Secure {
 		t.Fatal("expected cleared cookie to retain Secure flag")
 	}
+	legacyCookie := findCookie(rec.Result().Cookies(), middleware.LegacyTokenCookieName)
+	if legacyCookie == nil {
+		t.Fatal("expected legacy token cookie to be cleared in secure mode")
+	}
+	if legacyCookie.MaxAge != -1 {
+		t.Fatalf("legacy cookie MaxAge = %d, want -1", legacyCookie.MaxAge)
+	}
 
-	setCookieHeader := rec.Header().Get("Set-Cookie")
-	if !strings.Contains(setCookieHeader, "SameSite=Strict") {
-		t.Fatalf("expected SameSite=Strict in Set-Cookie header, got %q", setCookieHeader)
+	for _, setCookieHeader := range rec.Header().Values("Set-Cookie") {
+		if !strings.Contains(setCookieHeader, "SameSite=Strict") {
+			t.Fatalf("expected SameSite=Strict in Set-Cookie header, got %q", setCookieHeader)
+		}
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/ziyangli/fsrs/backend/internal/middleware"
 	"github.com/ziyangli/fsrs/backend/internal/model"
 	"github.com/ziyangli/fsrs/backend/internal/repository"
 )
@@ -437,7 +438,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 	cookies := rec.Result().Cookies()
 	var tokenCookie *http.Cookie
 	for _, c := range cookies {
-		if c.Name == "token" {
+		if c.Name == middleware.LegacyTokenCookieName {
 			tokenCookie = c
 			break
 		}
