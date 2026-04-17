@@ -20,6 +20,11 @@ func TestNormalizeOptionalExternalLink(t *testing.T) {
 			want:  "https://example.com/docs",
 		},
 		{
+			name:    "credential-bearing link is rejected",
+			input:   "https://user:pass@example.com/docs",
+			wantErr: true,
+		},
+		{
 			name:    "relative link is rejected",
 			input:   "/docs",
 			wantErr: true,

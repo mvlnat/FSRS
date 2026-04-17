@@ -20,7 +20,7 @@ func normalizeOptionalExternalLink(raw string) (string, error) {
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
-	if !parsed.IsAbs() || (scheme != "http" && scheme != "https") || parsed.Hostname() == "" {
+	if !parsed.IsAbs() || (scheme != "http" && scheme != "https") || parsed.Hostname() == "" || parsed.User != nil {
 		return "", errInvalidExternalLink
 	}
 

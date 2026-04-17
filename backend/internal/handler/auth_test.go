@@ -121,6 +121,69 @@ func TestAuthHandler_Register_Validation(t *testing.T) {
 	}
 }
 
+func TestAuthHandler_Login_Validation(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        map[string]string
+		wantStatus  int
+		wantMessage string
+	}{
+		{
+			name:        "missing email",
+			body:        map[string]string{"password": "password123"},
+			wantStatus:  http.StatusBadRequest,
+			wantMessage: "Email and password are required",
+		},
+		{
+			name:        "missing password",
+			body:        map[string]string{"email": "test@example.com"},
+			wantStatus:  http.StatusBadRequest,
+			wantMessage: "Email and password are required",
+		},
+		{
+			name:        "invalid email format",
+			body:        map[string]string{"email": "not-an-email", "password": "password123"},
+			wantStatus:  http.StatusBadRequest,
+			wantMessage: "Invalid email format",
+		},
+		{
+			name:        "overlong email",
+			body:        map[string]string{"email": strings.Repeat("a", 246) + "@example.com", "password": "password123"},
+			wantStatus:  http.StatusBadRequest,
+			wantMessage: "255 characters or fewer",
+		},
+	}
+
+	h := &AuthHandler{
+		userRepo:   fakeAuthUserStore{},
+		jwtSecret:  []byte("test-secret"),
+		authThrottle: fakeHandlerAuthThrottle{
+			allowFn: func(_ context.Context, _ string, _ string, _ int, _ time.Duration, _ time.Duration) (bool, time.Duration, error) {
+				t.Fatal("expected login validation to reject before throttle lookup")
+				return false, 0, nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(tt.body)
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			h.Login(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("got status %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if !strings.Contains(rec.Body.String(), tt.wantMessage) {
+				t.Fatalf("unexpected response body: %s", rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestAuthHandler_Login_InvalidJSON(t *testing.T) {
 	h := &AuthHandler{jwtSecret: []byte("test-secret")}
 
