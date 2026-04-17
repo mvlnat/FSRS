@@ -97,7 +97,10 @@ Use a separate git branch for code changes. The expected flow is:
 3. Run the backend/frontend checks.
 4. Commit the branch work.
 5. Merge the verified branch into `main`.
-6. Build Docker images and deploy to the droplet from the merged `main` state.
+6. Release from the verified `main` state. If your current checkout is on another branch or has local drift, use a separate worktree pinned to `main` for release verification and packaging.
+7. Build production Docker images locally only. Do not build on the droplet.
+8. Transfer only the release artifacts needed by production, load the prebuilt images on the droplet, and restart the stack from the canonical `docker-compose.prod.yml`.
+9. Clean up the droplet after deploy so it remains runtime-only instead of becoming a copy of the development workspace.
 
 Example:
 
@@ -113,3 +116,5 @@ git checkout -b <change-branch>
 - `docker-compose.yml` assumes HTTPS termination and mounted certificates at `./certs/fullchain.pem` and `./certs/privkey.pem`.
 - `docker-compose.prod.yml` is the droplet-targeted stack and expects Let's Encrypt certs at `/etc/letsencrypt/live/fsrs.ziyang.li/`.
 - The backend now refuses to start in production unless `SECURE_COOKIES=true`.
+- The droplet is a runtime host, not a build host. Keep builds local and publish prebuilt Docker images to the droplet.
+- After a successful deploy, `/root/fsrs` should normally contain only `.env`, `docker-compose.prod.yml`, and `nginx.conf`. Source trees, `node_modules`, temporary tar archives, local cert copies, and other dev/release leftovers should be removed.

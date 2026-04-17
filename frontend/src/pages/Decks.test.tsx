@@ -46,8 +46,10 @@ const deckWithStats: DeckWithStats = {
 function mockDownloadApis() {
   const originalCreateObjectURL = URL.createObjectURL;
   const originalRevokeObjectURL = URL.revokeObjectURL;
-  const createObjectURL = vi.fn((_: Blob | MediaSource) => 'blob:deck-export');
-  const revokeObjectURL = vi.fn((_: string) => undefined);
+  const createObjectURL = vi.fn<(blob: Blob | MediaSource) => string>();
+  createObjectURL.mockImplementation(() => 'blob:deck-export');
+  const revokeObjectURL = vi.fn<(url: string) => void>();
+  revokeObjectURL.mockImplementation(() => undefined);
   const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
 
   Object.defineProperty(URL, 'createObjectURL', {
