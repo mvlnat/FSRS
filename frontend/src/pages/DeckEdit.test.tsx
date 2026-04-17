@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -154,6 +154,24 @@ describe('DeckEdit', () => {
     expect(screen.getByText('Added question')).toBeInTheDocument();
   });
 
+  it('shows a duplicate-title warning while adding a card', async () => {
+    const user = userEvent.setup();
+
+    mockedApi.getDeck.mockResolvedValue(baseDeck);
+    mockedApi.getCards.mockResolvedValue(initialCards);
+    mockedApi.getTags.mockResolvedValue(noTags);
+
+    renderDeckEdit();
+
+    await screen.findByRole('button', { name: 'Cards (1)' });
+    await user.click(screen.getByRole('button', { name: 'Add Card' }));
+    await user.type(screen.getByLabelText('Front'), 'Existing question\nwith extra detail');
+
+    const warning = await screen.findByRole('status');
+    expect(within(warning).getByText('Possible duplicate in this deck')).toBeInTheDocument();
+    expect(within(warning).getByText(/Existing answer/)).toBeInTheDocument();
+  });
+
   it('saves edited tags through the card update request', async () => {
     const user = userEvent.setup();
 
@@ -178,6 +196,80 @@ describe('DeckEdit', () => {
         ['tag-1'],
       );
     });
+  });
+
+  it('shows a duplicate-title warning while editing a card', async () => {
+    const user = userEvent.setup();
+    const cardsWithPotentialDuplicate: CardWithState[] = [
+      initialCards[0],
+      {
+        id: 'card-2',
+        deck_id: 'deck-1',
+        front: 'Different question',
+        back: 'Second answer',
+        link: '',
+        created_at: '2026-04-14T00:01:00Z',
+        tags: [],
+      },
+    ];
+
+    mockedApi.getDeck.mockResolvedValue(baseDeck);
+    mockedApi.getCards.mockResolvedValue(cardsWithPotentialDuplicate);
+    mockedApi.getTags.mockResolvedValue(noTags);
+
+    renderDeckEdit();
+
+    await screen.findByText('Different question');
+    await user.click(screen.getByText('Different question'));
+
+    const editForm = document.querySelector('.card-edit');
+    expect(editForm).not.toBeNull();
+    const frontInput = within(editForm as HTMLElement).getAllByRole('textbox')[0];
+
+    await user.clear(frontInput);
+    await user.type(frontInput, 'Existing question');
+
+    const warning = await screen.findByRole('status');
+    expect(within(warning).getByText('Possible duplicate in this deck')).toBeInTheDocument();
+    expect(within(warning).getByText(/Existing answer/)).toBeInTheDocument();
+  });
+
+  it('sorts alphabetically by the visible first-line title', async () => {
+    const user = userEvent.setup();
+    const titleSortedCards: CardWithState[] = [
+      {
+        id: 'card-1',
+        deck_id: 'deck-1',
+        front: '**Beta** topic',
+        back: 'Beta answer',
+        link: '',
+        created_at: '2026-04-14T00:00:00Z',
+        tags: [],
+      },
+      {
+        id: 'card-2',
+        deck_id: 'deck-1',
+        front: 'Alpha topic',
+        back: 'Alpha answer',
+        link: '',
+        created_at: '2026-04-14T00:01:00Z',
+        tags: [],
+      },
+    ];
+
+    mockedApi.getDeck.mockResolvedValue(baseDeck);
+    mockedApi.getCards.mockResolvedValue(titleSortedCards);
+    mockedApi.getTags.mockResolvedValue(noTags);
+
+    const { container } = renderDeckEdit();
+
+    await screen.findByText('Beta topic');
+    await user.selectOptions(screen.getByRole('combobox'), 'alpha');
+
+    const titles = Array.from(container.querySelectorAll('.card-preview-text')).map((node) =>
+      node.textContent?.trim(),
+    );
+    expect(titles).toEqual(['Alpha topic', 'Beta topic']);
   });
 
   it('clears a stale error after a successful deck reload', async () => {

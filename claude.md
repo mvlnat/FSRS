@@ -2,43 +2,27 @@
 
 ## Workflow Reminders
 
-1. **Start in the correct dedicated clone and branch** - Use `../fsrs2` for bug fixes and `../fsrs3` for new feature development, then create a branch from `main`. If those are already occupied, create another sibling clone such as `../fsrs4`
-2. **Do not use `git worktree` for concurrent isolation** - Worktrees share refs with the parent repo and can race other sessions
-3. **Keep `/Users/ziyangli/Coding/fsrs` as the canonical `main` checkout** - Use that clone for final merges, release verification, and deployment steps, not day-to-day feature development
-4. **Try to add tests for new work** - Add or update tests for new development and behavior changes whenever practical
-5. **Commit branch work** - Commit changes on the branch once the change and tests are in good shape
-6. **Always run checks before merge** - Run backend/frontend tests and builds before moving a change forward
-7. **Review before merge** - Do code review before moving branch work into `main`
-8. **Merge before deploy** - Once the reviewed branch looks good, merge it into `main`
-9. **Always build and push from `main`** - After the merged `main` state passes checks, build Docker images and deploy to droplet
+1. **Start from `/Users/ziyangli/Coding/fsrs` and branch from `main`** - Sync `main` with `origin/main`, then create a short-lived branch for the task
+2. **Keep `main` clean and deployable** - Do development work on topic branches, then merge back into `main` only after review and verification
+3. **Try to add tests for new work** - Add or update tests for new development and behavior changes whenever practical
+4. **Commit branch work** - Commit changes on the branch once the change and tests are in good shape
+5. **Always run checks before merge** - Run backend/frontend tests and builds before moving a change forward
+6. **Review before merge** - Do code review before moving branch work into `main`
+7. **Merge before deploy** - Once the reviewed branch looks good, merge it into `main`
+8. **Always build and push from `main`** - After the merged `main` state passes checks, build Docker images and deploy to droplet
 
 ## Preferred Git Flow
 
-1. Create or reuse the correct isolated sibling clone, then branch from `main`
+1. Sync `main` and create a branch for the change
 ```bash
-cd /Users/ziyangli/Coding/fsrs2
+cd /Users/ziyangli/Coding/fsrs
 git fetch origin
 git switch main
 git pull --ff-only
 git switch -c <change-branch>
 ```
 
-For new feature work, use `fsrs3` instead:
-```bash
-cd /Users/ziyangli/Coding/fsrs3
-git fetch origin
-git switch main
-git pull --ff-only
-git switch -c <feature-branch>
-```
-
-If more isolation is needed, create another sibling clone with the next free `fsrs#` name:
-```bash
-cd /Users/ziyangli/Coding
-git clone git@github.com:mvlnat/FSRS.git fsrs4
-```
-
-2. Make changes and verify them inside that clone only
+2. Make changes and verify them in this repo
 
 3. Try to add or update tests for the new work before finishing the branch
 
@@ -50,13 +34,13 @@ git commit -m "<message>"
 
 5. Review the branch and fix findings
 
-6. Merge back into `main` from the canonical clone once the change looks good
+6. Merge back into `main` once the change looks good
 ```bash
 cd /Users/ziyangli/Coding/fsrs
 git fetch origin
 git switch main
 git pull --ff-only
-git merge --ff-only origin/<change-branch>
+git merge --ff-only <change-branch>
 ```
 
 7. Build and deploy from `main`

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { Deck, CardWithState, Tag } from '../types';
 import * as api from '../api/client';
+import { getCardTitle, normalizeCardTitle } from '../utils/cards';
 import { normalizeOptionalExternalLink } from '../utils/links';
 
 type Tab = 'settings' | 'cards';
@@ -43,6 +44,26 @@ export function DeckEdit() {
   const [editLink, setEditLink] = useState('');
   const [editTagIds, setEditTagIds] = useState<string[]>([]);
 
+  const newCardDuplicates = useMemo(() => {
+    const normalizedTitle = normalizeCardTitle(newFront);
+    if (!normalizedTitle) {
+      return [];
+    }
+
+    return cards.filter((card) => normalizeCardTitle(card.front) === normalizedTitle);
+  }, [cards, newFront]);
+
+  const editCardDuplicates = useMemo(() => {
+    const normalizedTitle = normalizeCardTitle(editFront);
+    if (!normalizedTitle || !editingCard) {
+      return [];
+    }
+
+    return cards.filter(
+      (card) => card.id !== editingCard && normalizeCardTitle(card.front) === normalizedTitle,
+    );
+  }, [cards, editingCard, editFront]);
+
   // Filtered and sorted cards
   const filteredCards = useMemo(() => {
     let result = [...cards];
@@ -70,8 +91,13 @@ export function DeckEdit() {
           return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         case 'newest':
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        case 'alpha':
+        case 'alpha': {
+          const titleCompare = normalizeCardTitle(a.front).localeCompare(normalizeCardTitle(b.front));
+          if (titleCompare !== 0) {
+            return titleCompare;
+          }
           return a.front.localeCompare(b.front);
+        }
         case 'mostReviews':
           return (b.state?.reps || 0) - (a.state?.reps || 0);
         case 'leastReviews':
@@ -227,17 +253,6 @@ export function DeckEdit() {
     setEditBack(card.back);
     setEditLink(card.link || '');
     setEditTagIds(card.tags?.map(t => t.id) || []);
-  };
-
-  const getFirstLine = (text: string): string => {
-    const firstLine = text.split('\n')[0].trim();
-    // Remove markdown formatting for preview
-    return firstLine
-      .replace(/```.*/, '') // Remove code block start
-      .replace(/`([^`]+)`/g, '$1') // Remove inline code backticks
-      .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold
-      .replace(/\*([^*]+)\*/g, '$1') // Remove italic
-      .slice(0, 100) + (firstLine.length > 100 ? '...' : '');
   };
 
   if (loading) return <div className="deck-edit-container">Loading...</div>;
@@ -428,6 +443,29 @@ export function DeckEdit() {
                     rows={6}
                     placeholder="Question or prompt..."
                   />
+                  {newCardDuplicates.length > 0 && (
+                    <div className="duplicate-warning" role="status" aria-live="polite">
+                      <strong className="duplicate-warning-title">Possible duplicate in this deck</strong>
+                      <p className="duplicate-warning-copy">
+                        {newCardDuplicates.length === 1
+                          ? '1 existing card has the same first-line title.'
+                          : `${newCardDuplicates.length} existing cards have the same first-line title.`}
+                      </p>
+                      <ul className="duplicate-warning-list">
+                        {newCardDuplicates.map((card) => (
+                          <li key={card.id}>
+                            <span className="duplicate-warning-card">{getCardTitle(card.front)}</span>
+                            {getCardTitle(card.back) && (
+                              <span className="duplicate-warning-card-meta">
+                                {' '}
+                                - {getCardTitle(card.back)}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
                 <div className="form-group">
                   <label htmlFor="back">Back</label>
@@ -479,6 +517,31 @@ export function DeckEdit() {
                               onChange={(e) => setEditFront(e.target.value)}
                               rows={6}
                             />
+                            {editCardDuplicates.length > 0 && (
+                              <div className="duplicate-warning" role="status" aria-live="polite">
+                                <strong className="duplicate-warning-title">Possible duplicate in this deck</strong>
+                                <p className="duplicate-warning-copy">
+                                  {editCardDuplicates.length === 1
+                                    ? '1 existing card has the same first-line title.'
+                                    : `${editCardDuplicates.length} existing cards have the same first-line title.`}
+                                </p>
+                                <ul className="duplicate-warning-list">
+                                  {editCardDuplicates.map((duplicateCard) => (
+                                    <li key={duplicateCard.id}>
+                                      <span className="duplicate-warning-card">
+                                        {getCardTitle(duplicateCard.front)}
+                                      </span>
+                                      {getCardTitle(duplicateCard.back) && (
+                                        <span className="duplicate-warning-card-meta">
+                                          {' '}
+                                          - {getCardTitle(duplicateCard.back)}
+                                        </span>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
                           </div>
                           <div className="form-group">
                             <label>Back</label>
@@ -524,7 +587,7 @@ export function DeckEdit() {
                       <div className="card-row">
                         <div className="card-preview" onClick={() => startEditing(card)}>
                           <div className="card-preview-main">
-                            <span className="card-preview-text">{getFirstLine(card.front)}</span>
+                            <span className="card-preview-text">{getCardTitle(card.front)}</span>
                             {card.tags && card.tags.length > 0 && (
                               <div className="card-tags">
                                 {card.tags.map(tag => (

@@ -1146,6 +1146,48 @@ button:disabled {
   margin-bottom: 16px;
 }
 
+.duplicate-warning {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 159, 10, 0.35);
+  border-radius: 12px;
+  background: rgba(255, 159, 10, 0.08);
+}
+
+.duplicate-warning-title {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--warning);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.duplicate-warning-copy {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.duplicate-warning-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.duplicate-warning-list li + li {
+  margin-top: 4px;
+}
+
+.duplicate-warning-card {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.duplicate-warning-card-meta {
+  color: var(--text-tertiary);
+}
+
 .add-card-form {
   background: var(--bg-tertiary);
   padding: 24px;
