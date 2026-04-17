@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -18,6 +19,7 @@ var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]
 
 const (
 	minPasswordLength = 8
+	maxEmailLength    = 255
 	tokenLifetime     = 7 * 24 * time.Hour
 )
 
@@ -73,12 +75,17 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.Email) > maxEmailLength {
+		http.Error(w, "Email must be 255 characters or fewer", http.StatusBadRequest)
+		return
+	}
+
 	if !emailRegex.MatchString(req.Email) {
 		http.Error(w, "Invalid email format", http.StatusBadRequest)
 		return
 	}
 
-	if len(req.Password) < minPasswordLength {
+	if utf8.RuneCountInString(req.Password) < minPasswordLength {
 		http.Error(w, "Password must be at least 8 characters", http.StatusBadRequest)
 		return
 	}

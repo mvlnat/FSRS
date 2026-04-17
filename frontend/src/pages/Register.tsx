@@ -2,8 +2,16 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
+const minPasswordCharacters = 8;
+const maxPasswordBytes = 72;
+const maxEmailLength = 255;
+
 function getPasswordByteLength(value: string) {
   return new TextEncoder().encode(value).length;
+}
+
+function getPasswordCharacterCount(value: string) {
+  return Array.from(value).length;
 }
 
 export function Register() {
@@ -18,17 +26,27 @@ export function Register() {
     e.preventDefault();
     setError('');
 
+    const trimmedEmail = email.trim();
+
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
     }
-    if (getPasswordByteLength(password) > 72) {
+    if (trimmedEmail.length > maxEmailLength) {
+      setError('Email must be 255 characters or fewer');
+      return;
+    }
+    if (getPasswordCharacterCount(password) < minPasswordCharacters) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+    if (getPasswordByteLength(password) > maxPasswordBytes) {
       setError('Password must be 72 bytes or fewer');
       return;
     }
 
     try {
-      await register(email, password);
+      await register(trimmedEmail, password);
       navigate('/login', {
         state: {
           info: 'If the email is available, the account is ready to sign in.',
@@ -52,6 +70,7 @@ export function Register() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            maxLength={maxEmailLength}
           />
         </div>
         <div className="form-group">
@@ -62,7 +81,7 @@ export function Register() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={8}
+            minLength={minPasswordCharacters}
           />
         </div>
         <div className="form-group">

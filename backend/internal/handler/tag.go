@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ziyangli/fsrs/backend/internal/model"
 	"github.com/ziyangli/fsrs/backend/internal/repository"
@@ -24,6 +26,18 @@ func NewTagHandler(tagRepo *repository.TagRepository, deckRepo *repository.DeckR
 
 type createTagRequest struct {
 	Name string `json:"name"`
+}
+
+const maxTagNameLength = 100
+
+func validateTagName(name string) error {
+	if name == "" {
+		return fmt.Errorf("Tag name is required")
+	}
+	if utf8.RuneCountInString(name) > maxTagNameLength {
+		return fmt.Errorf("Tag name must be %d characters or fewer", maxTagNameLength)
+	}
+	return nil
 }
 
 type setCardTagsRequest struct {
@@ -81,8 +95,8 @@ func (h *TagHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" {
-		http.Error(w, "Tag name is required", http.StatusBadRequest)
+	if err := validateTagName(req.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 

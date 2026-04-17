@@ -47,4 +47,35 @@ describe('Register', () => {
     expect(register).not.toHaveBeenCalled();
     expect(screen.getByText('Password must be 72 bytes or fewer')).toBeInTheDocument();
   });
+
+  it('blocks passwords that are fewer than 8 characters even when UTF-16 length reaches 8', async () => {
+    const register = vi.fn();
+    const user = userEvent.setup();
+
+    mockedUseAuth.mockReturnValue({
+      user: null,
+      loading: false,
+      error: null,
+      login: vi.fn(),
+      register,
+      logout: vi.fn(),
+      isAuthenticated: false,
+    } satisfies AuthContextType);
+
+    render(
+      <MemoryRouter>
+        <Register />
+      </MemoryRouter>,
+    );
+
+    const tooShortPassword = '🙂🙂🙂🙂';
+
+    await user.type(screen.getByLabelText('Email'), 'grace@example.com');
+    await user.type(screen.getByLabelText('Password'), tooShortPassword);
+    await user.type(screen.getByLabelText('Confirm Password'), tooShortPassword);
+    await user.click(screen.getByRole('button', { name: 'Register' }));
+
+    expect(register).not.toHaveBeenCalled();
+    expect(screen.getByText('Password must be at least 8 characters')).toBeInTheDocument();
+  });
 });
