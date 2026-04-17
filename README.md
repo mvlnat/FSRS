@@ -40,6 +40,54 @@ cd /Users/ziyangli/Coding/fsrs
 devbox run bash -lc 'cd backend && go test -tags=integration ./internal/handler/...'
 ```
 
+### Start a disposable PostgreSQL test instance with Docker
+
+The integration tests expect:
+
+- host: `localhost`
+- port: `5432`
+- user: `fsrs`
+- password: `fsrs`
+- database: `fsrs_test`
+
+Start the test database:
+
+```bash
+docker run --name fsrs-test-postgres \
+  -e POSTGRES_USER=fsrs \
+  -e POSTGRES_PASSWORD=fsrs \
+  -e POSTGRES_DB=fsrs_test \
+  -p 5432:5432 \
+  -d postgres:16
+```
+
+Wait until Postgres is ready:
+
+```bash
+docker exec fsrs-test-postgres pg_isready -U fsrs -d fsrs_test
+```
+
+Run the integration tests:
+
+```bash
+cd /Users/ziyangli/Coding/fsrs
+devbox run bash -lc 'cd backend && go test -count=1 -tags=integration ./internal/handler/...'
+```
+
+If you prefer not to use the default connection settings, override them with `TEST_DATABASE_URL`:
+
+```bash
+cd /Users/ziyangli/Coding/fsrs
+TEST_DATABASE_URL='postgres://fsrs:fsrs@localhost:5432/fsrs_test?sslmode=disable' \
+  devbox run bash -lc 'cd backend && go test -count=1 -tags=integration ./internal/handler/...'
+```
+
+Stop and remove the disposable database when done:
+
+```bash
+docker rm -f fsrs-test-postgres
+```
+
 ## Preferred Development Workflow
 
 Use a separate git branch for code changes. The expected flow is:
