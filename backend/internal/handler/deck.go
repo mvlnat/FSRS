@@ -93,6 +93,10 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateDeckDescription(req.Description); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	deck, err := h.deckRepo.Create(r.Context(), userID, req.Name, req.Description)
 	if err == repository.ErrInvalidInput {
@@ -148,6 +152,10 @@ func (h *DeckHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	req.Name = normalizeDeckName(req.Name)
 	if err := validateDeckName(req.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateDeckDescription(req.Description); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -282,6 +290,14 @@ func (h *DeckHandler) Import(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateDeckDescription(export.Description); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateImportCardCount(len(export.Cards)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	for i, card := range export.Cards {
 		if strings.TrimSpace(card.Front) == "" || strings.TrimSpace(card.Back) == "" {
@@ -292,6 +308,10 @@ func (h *DeckHandler) Import(w http.ResponseWriter, r *http.Request) {
 		normalizedLink, err := normalizeOptionalExternalLink(card.Link)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Card %d link must be a valid http or https URL", i+1), http.StatusBadRequest)
+			return
+		}
+		if err := validateCardContent(card.Front, card.Back, normalizedLink); err != nil {
+			http.Error(w, fmt.Sprintf("Card %d %s", i+1, err.Error()), http.StatusBadRequest)
 			return
 		}
 

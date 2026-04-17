@@ -118,6 +118,10 @@ func (h *CardHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Link = normalizedLink
+	if err := validateCardContent(req.Front, req.Back, req.Link); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	card, err := h.cardRepo.Create(r.Context(), deckID, req.Front, req.Back, req.Link)
 	if err != nil {
@@ -179,6 +183,10 @@ func (h *CardHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Link = normalizedLink
+	if err := validateCardContent(req.Front, req.Back, req.Link); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	replaceTags := req.TagIDs != nil
 	tagIDs := make([]uuid.UUID, 0, len(req.TagIDs))

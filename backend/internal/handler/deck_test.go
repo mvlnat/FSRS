@@ -85,6 +85,32 @@ func TestDeckHandler_CreateRejectsOverlongName(t *testing.T) {
 	}
 }
 
+func TestDeckHandler_CreateRejectsOverlongDescription(t *testing.T) {
+	h := &DeckHandler{}
+
+	body, err := json.Marshal(createDeckRequest{
+		Name:        "Deck",
+		Description: strings.Repeat("a", maxDeckDescriptionLength+1),
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uuid.New()))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Create(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "description must be") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+}
+
 func TestDeckHandler_Import_RejectsInvalidCardLink(t *testing.T) {
 	h := &DeckHandler{}
 
@@ -150,6 +176,40 @@ func TestDeckHandler_ImportRejectsUnknownFields(t *testing.T) {
 		t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 	if !strings.Contains(rec.Body.String(), "unknown fields") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+}
+
+func TestDeckHandler_ImportRejectsTooManyCards(t *testing.T) {
+	h := &DeckHandler{}
+
+	cards := make([]CardExport, maxImportCardCount+1)
+	for i := range cards {
+		cards[i] = CardExport{
+			Front: "Question",
+			Back:  "Answer",
+		}
+	}
+
+	body, err := json.Marshal(DeckExport{
+		Name:  "Imported",
+		Cards: cards,
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/decks/import", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uuid.New()))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Import(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "10000 cards or fewer") {
 		t.Fatalf("unexpected response body: %s", rec.Body.String())
 	}
 }

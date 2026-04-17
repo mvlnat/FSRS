@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -819,6 +820,100 @@ func TestIntegration_UpdateCardRejectsBlankContent(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("update card: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestIntegration_CreateCardRejectsOversizedContent(t *testing.T) {
+	authCookie := registerAndLoginTestUser(t, "oversized-create@example.com", "password123")
+
+	body := `{"name":"Large Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&deck); err != nil {
+		t.Fatalf("decode deck: %v", err)
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"front": strings.Repeat("Q", 100001),
+		"back":  "Answer",
+		"link":  "",
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("create oversized card: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "front must be 100000 characters or fewer") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+}
+
+func TestIntegration_UpdateCardRejectsOversizedLink(t *testing.T) {
+	authCookie := registerAndLoginTestUser(t, "oversized-update@example.com", "password123")
+
+	body := `{"name":"Update Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&deck); err != nil {
+		t.Fatalf("decode deck: %v", err)
+	}
+
+	body = `{"front":"Prompt","back":"Answer","link":""}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var card struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&card); err != nil {
+		t.Fatalf("decode card: %v", err)
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"front": "Prompt",
+		"back":  "Answer",
+		"link":  "https://example.com/" + strings.Repeat("a", 8173),
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodPut, "/api/cards/"+card.ID, bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("update oversized card link: got status %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "link must be 8192 characters or fewer") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
 	}
 }
 
