@@ -16,7 +16,10 @@ import (
 
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
-const minPasswordLength = 8
+const (
+	minPasswordLength = 8
+	tokenLifetime     = 7 * 24 * time.Hour
+)
 
 type AuthHandler struct {
 	userRepo      *repository.UserRepository
@@ -42,10 +45,16 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+type registerResponse struct {
+	Message string `json:"message"`
+}
+
 type authResponse struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 }
+
+const maxPasswordBytes = 72
 
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
@@ -53,8 +62,7 @@ func normalizeEmail(email string) string {
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeStrictJSONBody(w, r, &req, defaultJSONBodyLimit) {
 		return
 	}
 
@@ -74,6 +82,10 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Password must be at least 8 characters", http.StatusBadRequest)
 		return
 	}
+	if len([]byte(req.Password)) > maxPasswordBytes {
+		http.Error(w, "Password must be 72 bytes or fewer", http.StatusBadRequest)
+		return
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -82,32 +94,28 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := h.userRepo.Create(r.Context(), req.Email, string(hash))
-	if err == repository.ErrDuplicate {
-		http.Error(w, "Email already exists", http.StatusConflict)
-		return
-	}
-	if err != nil {
+	if err != nil && err != repository.ErrDuplicate {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	if err := h.setTokenCookie(w, user.ID.String()); err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
+	if err == nil {
+		if err := h.setTokenCookie(w, user.ID.String(), user.TokenVersion); err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(authResponse{
-		ID:    user.ID.String(),
-		Email: user.Email,
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(registerResponse{
+		Message: "If the email is available, the account is ready to sign in.",
 	})
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeStrictJSONBody(w, r, &req, defaultJSONBodyLimit) {
 		return
 	}
 
@@ -128,7 +136,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.setTokenCookie(w, user.ID.String()); err != nil {
+	if err := h.setTokenCookie(w, user.ID.String(), user.TokenVersion); err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -141,15 +149,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "token",
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   h.secureCookies,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-	})
+	if userID, ok := middleware.GetUserID(r.Context()); ok && h.userRepo != nil {
+		if err := h.userRepo.IncrementTokenVersion(r.Context(), userID); err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	h.clearTokenCookie(w)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -178,10 +185,16 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *AuthHandler) setTokenCookie(w http.ResponseWriter, userID string) error {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": userID,
-		"exp": time.Now().Add(7 * 24 * time.Hour).Unix(),
+func (h *AuthHandler) setTokenCookie(w http.ResponseWriter, userID string, tokenVersion int) error {
+	expiresAt := time.Now().Add(tokenLifetime)
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, middleware.TokenClaims{
+		TokenVersion: tokenVersion,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
 	})
 
 	tokenString, err := token.SignedString(h.jwtSecret)
@@ -195,8 +208,22 @@ func (h *AuthHandler) setTokenCookie(w http.ResponseWriter, userID string) error
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   h.secureCookies,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   7 * 24 * 60 * 60, // 7 days
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int(tokenLifetime.Seconds()),
+		Expires:  expiresAt,
 	})
 	return nil
+}
+
+func (h *AuthHandler) clearTokenCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   h.secureCookies,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
 }

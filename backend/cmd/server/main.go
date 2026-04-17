@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -13,13 +11,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/jackc/pgx/v5"
 
+	"github.com/ziyangli/fsrs/backend/internal/bootstrap"
 	"github.com/ziyangli/fsrs/backend/internal/handler"
 	"github.com/ziyangli/fsrs/backend/internal/middleware"
 	"github.com/ziyangli/fsrs/backend/internal/repository"
 	"github.com/ziyangli/fsrs/backend/internal/service"
-	dbmigrations "github.com/ziyangli/fsrs/backend/migrations"
 )
 
 func main() {
@@ -42,7 +39,7 @@ func main() {
 	if environment == "production" && !secureCookies {
 		log.Fatal("SECURE_COOKIES must be true in production; enable HTTPS at the proxy before starting the server")
 	}
-	corsOrigins := getEnv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,https://fsrs.ziyang.li,http://161.35.3.230")
+	corsOrigins := getCORSOrigins(environment)
 
 	// Connect to database
 	db, err := repository.NewDB(ctx, databaseURL)
@@ -52,7 +49,7 @@ func main() {
 	defer db.Close()
 
 	// Run migrations
-	if err := runMigrations(ctx, db); err != nil {
+	if err := bootstrap.RunMigrations(ctx, db); err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
 
@@ -73,7 +70,7 @@ func main() {
 	tagHandler := handler.NewTagHandler(tagRepo, deckRepo, cardRepo)
 
 	// Initialize middleware
-	authMiddleware := middleware.NewAuthMiddleware(jwtSecret)
+	authMiddleware := middleware.NewAuthMiddleware(jwtSecret, userRepo)
 	// 10 requests per minute for auth endpoints
 	authRateLimiter := middleware.NewRateLimiter(10, time.Minute)
 	authRateLimiter.SetTrustProxy(os.Getenv("TRUST_PROXY_HEADERS") == "true")
@@ -85,7 +82,7 @@ func main() {
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   strings.Split(corsOrigins, ","),
+		AllowedOrigins:   splitCSV(corsOrigins),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
@@ -150,64 +147,26 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func runMigrations(ctx context.Context, db *repository.DB) error {
-	scripts, err := dbmigrations.OrderedScripts()
-	if err != nil {
-		return err
+func getCORSOrigins(environment string) string {
+	if value := os.Getenv("CORS_ORIGINS"); value != "" {
+		return value
 	}
 
-	for _, script := range scripts {
-		if _, err := db.Pool.Exec(ctx, script.SQL); err != nil {
-			return fmt.Errorf("apply migration %s: %w", script.Name, err)
-		}
+	if environment == "production" {
+		return "https://fsrs.ziyang.li"
 	}
 
-	return ensureCanonicalUserEmails(ctx, db)
+	return "http://localhost:5173,http://localhost:3000"
 }
 
-func ensureCanonicalUserEmails(ctx context.Context, db *repository.DB) error {
-	tx, err := db.Pool.Begin(ctx)
-	if err != nil {
-		return err
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
 	}
-	defer tx.Rollback(ctx)
-
-	var canonicalEmail string
-	var conflictingEmails string
-	err = tx.QueryRow(ctx, `
-		SELECT
-			LOWER(BTRIM(email)) AS canonical_email,
-			STRING_AGG(email, ', ' ORDER BY created_at) AS conflicting_emails
-		FROM users
-		GROUP BY LOWER(BTRIM(email))
-		HAVING COUNT(*) > 1
-		LIMIT 1
-	`).Scan(&canonicalEmail, &conflictingEmails)
-	if err == nil {
-		return fmt.Errorf(
-			"duplicate user emails must be resolved before startup: canonical email %q maps to multiple rows (%s)",
-			canonicalEmail,
-			conflictingEmails,
-		)
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return err
-	}
-
-	if _, err := tx.Exec(ctx, `
-		UPDATE users
-		SET email = LOWER(BTRIM(email))
-		WHERE email <> LOWER(BTRIM(email))
-	`); err != nil {
-		return err
-	}
-
-	if _, err := tx.Exec(ctx, `
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_canonical
-		ON users ((LOWER(BTRIM(email))))
-	`); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+	return result
 }

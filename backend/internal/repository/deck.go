@@ -61,6 +61,26 @@ func (r *DeckRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Deck
 	return deck, nil
 }
 
+func (r *DeckRepository) GetOwnedByID(ctx context.Context, id, userID uuid.UUID) (*model.Deck, error) {
+	deck := &model.Deck{}
+	err := r.db.Pool.QueryRow(ctx,
+		`SELECT id, user_id, name, description, created_at FROM decks WHERE id = $1`,
+		id,
+	).Scan(&deck.ID, &deck.UserID, &deck.Name, &deck.Description, &deck.CreatedAt)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if deck.UserID != userID {
+		return nil, ErrForbidden
+	}
+
+	return deck, nil
+}
+
 func (r *DeckRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]model.Deck, error) {
 	rows, err := r.db.Pool.Query(ctx,
 		`SELECT id, user_id, name, description, created_at FROM decks WHERE user_id = $1 ORDER BY created_at DESC`,

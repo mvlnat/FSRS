@@ -13,7 +13,6 @@ vi.mock('../api/client', () => ({
   updateDeck: vi.fn(),
   createCard: vi.fn(),
   updateCard: vi.fn(),
-  setCardTags: vi.fn(),
   createTag: vi.fn(),
   deleteTag: vi.fn(),
   deleteCard: vi.fn(),
@@ -179,7 +178,6 @@ describe('DeckEdit', () => {
         ['tag-1'],
       );
     });
-    expect(mockedApi.setCardTags).not.toHaveBeenCalled();
   });
 
   it('clears a stale error after a successful deck reload', async () => {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -67,6 +68,48 @@ func TestAuthHandler_Login_InvalidJSON(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestAuthHandler_Register_RejectsOverlongPassword(t *testing.T) {
+	h := &AuthHandler{jwtSecret: []byte("test-secret")}
+
+	body, _ := json.Marshal(map[string]string{
+		"email":    "test@example.com",
+		"password": strings.Repeat("a", maxPasswordBytes+1),
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Register(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "72 bytes or fewer") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+}
+
+func TestAuthHandler_Register_RejectsUnknownFields(t *testing.T) {
+	h := &AuthHandler{jwtSecret: []byte("test-secret")}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/register",
+		bytes.NewReader([]byte(`{"email":"test@example.com","password":"password123","extra":"value"}`)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Register(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "unknown fields") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
 	}
 }
 

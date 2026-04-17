@@ -76,6 +76,15 @@
   font-size: 15px;
 }
 
+.success {
+  background: rgba(52, 199, 89, 0.1);
+  color: #1d6f35;
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  font-size: 15px;
+}
+
 /* Buttons - Apple style */
 button {
   font-family: var(--font-system);

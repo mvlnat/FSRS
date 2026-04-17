@@ -1,14 +1,9 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-
-	"github.com/ziyangli/fsrs/backend/internal/middleware"
 	"github.com/ziyangli/fsrs/backend/internal/model"
 	"github.com/ziyangli/fsrs/backend/internal/repository"
 )
@@ -37,30 +32,17 @@ type setCardTagsRequest struct {
 
 // ListByDeck returns all tags for a deck
 func (h *TagHandler) ListByDeck(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	deckID, err := uuid.Parse(chi.URLParam(r, "deckId"))
-	if err != nil {
-		http.Error(w, "Invalid deck ID", http.StatusBadRequest)
+	deckID, ok := parseUUIDParam(w, r, "deckId", "deck")
+	if !ok {
 		return
 	}
 
-	// Check deck ownership
-	deck, err := h.deckRepo.GetByID(r.Context(), deckID)
-	if err == repository.ErrNotFound {
-		http.Error(w, "Deck not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if deck.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	if _, ok := requireOwnedDeck(w, r, h.deckRepo, deckID, userID); !ok {
 		return
 	}
 
@@ -74,42 +56,27 @@ func (h *TagHandler) ListByDeck(w http.ResponseWriter, r *http.Request) {
 		tags = []model.Tag{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tags)
+	writeJSON(w, http.StatusOK, tags)
 }
 
 // Create creates a new tag for a deck
 func (h *TagHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	deckID, err := uuid.Parse(chi.URLParam(r, "deckId"))
-	if err != nil {
-		http.Error(w, "Invalid deck ID", http.StatusBadRequest)
+	deckID, ok := parseUUIDParam(w, r, "deckId", "deck")
+	if !ok {
 		return
 	}
 
-	// Check deck ownership
-	deck, err := h.deckRepo.GetByID(r.Context(), deckID)
-	if err == repository.ErrNotFound {
-		http.Error(w, "Deck not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if deck.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	if _, ok := requireOwnedDeck(w, r, h.deckRepo, deckID, userID); !ok {
 		return
 	}
 
 	var req createTagRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req, 0) {
 		return
 	}
 
@@ -133,44 +100,22 @@ func (h *TagHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(tag)
+	writeJSON(w, http.StatusCreated, tag)
 }
 
 // Delete deletes a tag
 func (h *TagHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	tagID, err := uuid.Parse(chi.URLParam(r, "tagId"))
-	if err != nil {
-		http.Error(w, "Invalid tag ID", http.StatusBadRequest)
+	tagID, ok := parseUUIDParam(w, r, "tagId", "tag")
+	if !ok {
 		return
 	}
 
-	// Get tag to check ownership
-	tag, err := h.tagRepo.GetByID(r.Context(), tagID)
-	if err == repository.ErrNotFound {
-		http.Error(w, "Tag not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	// Check deck ownership
-	deck, err := h.deckRepo.GetByID(r.Context(), tag.DeckID)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if deck.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	if _, ok := requireOwnedTag(w, r, h.tagRepo, tagID, userID); !ok {
 		return
 	}
 
@@ -184,78 +129,32 @@ func (h *TagHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // SetCardTags sets the tags for a card
 func (h *TagHandler) SetCardTags(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	cardID, err := uuid.Parse(chi.URLParam(r, "cardId"))
-	if err != nil {
-		http.Error(w, "Invalid card ID", http.StatusBadRequest)
+	cardID, ok := parseUUIDParam(w, r, "cardId", "card")
+	if !ok {
 		return
 	}
 
-	// Get card to check ownership
-	card, err := h.cardRepo.GetByID(r.Context(), cardID)
-	if err == repository.ErrNotFound {
-		http.Error(w, "Card not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	// Check deck ownership
-	deck, err := h.deckRepo.GetByID(r.Context(), card.DeckID)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if deck.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	card, ok := requireOwnedCard(w, r, h.cardRepo, cardID, userID)
+	if !ok {
 		return
 	}
 
 	var req setCardTagsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req, 0) {
 		return
 	}
 
-	// Parse tag IDs
-	tagIDs := make([]uuid.UUID, 0, len(req.TagIDs))
-	seenTagIDs := make(map[uuid.UUID]struct{}, len(req.TagIDs))
-	for _, idStr := range req.TagIDs {
-		id, err := uuid.Parse(idStr)
-		if err != nil {
-			http.Error(w, "Invalid tag ID", http.StatusBadRequest)
-			return
-		}
-		if _, seen := seenTagIDs[id]; seen {
-			continue
-		}
-		seenTagIDs[id] = struct{}{}
-		tagIDs = append(tagIDs, id)
+	tagIDs, ok := parseUniqueTagIDs(w, req.TagIDs)
+	if !ok {
+		return
 	}
-
-	if len(tagIDs) > 0 {
-		tags, err := h.tagRepo.GetByIDs(r.Context(), tagIDs)
-		if err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
-		if len(tags) != len(tagIDs) {
-			http.Error(w, "Invalid tag ID", http.StatusBadRequest)
-			return
-		}
-		for _, tag := range tags {
-			if tag.DeckID != card.DeckID {
-				http.Error(w, "Tags must belong to the same deck as the card", http.StatusBadRequest)
-				return
-			}
-		}
+	if !validateTagIDsForDeck(w, r, h.tagRepo, card.DeckID, tagIDs) {
+		return
 	}
 
 	if err := h.tagRepo.SetCardTags(r.Context(), cardID, tagIDs); err != nil {
@@ -274,6 +173,5 @@ func (h *TagHandler) SetCardTags(w http.ResponseWriter, r *http.Request) {
 		tags = []model.Tag{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tags)
+	writeJSON(w, http.StatusOK, tags)
 }

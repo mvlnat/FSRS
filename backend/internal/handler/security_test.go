@@ -8,40 +8,35 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+
 	"github.com/ziyangli/fsrs/backend/internal/middleware"
+	"github.com/ziyangli/fsrs/backend/internal/model"
 )
 
-// TestAuthHandler_NoPasswordInResponse ensures password hash is never returned
-func TestAuthHandler_NoPasswordInResponse(t *testing.T) {
-	// This test verifies that the User struct doesn't expose password hash
-	type userResponse struct {
-		ID           string `json:"id"`
-		Email        string `json:"email"`
-		Password     string `json:"password"`
-		PasswordHash string `json:"password_hash"`
+func TestUserModelOmitsPasswordHashFromJSON(t *testing.T) {
+	payload, err := json.Marshal(model.User{
+		ID:           uuid.New(),
+		Email:        "test@example.com",
+		PasswordHash: "super-secret-hash",
+	})
+	if err != nil {
+		t.Fatalf("marshal user: %v", err)
 	}
 
-	// Mock user response
-	mockResponse := `{"id":"123","email":"test@example.com"}`
-
-	var user userResponse
-	if err := json.Unmarshal([]byte(mockResponse), &user); err != nil {
-		t.Fatal(err)
+	if bytes.Contains(payload, []byte("password_hash")) {
+		t.Fatalf("expected password_hash field to be omitted from JSON, got %s", payload)
 	}
-
-	if user.Password != "" {
-		t.Error("password should not be in response")
-	}
-	if user.PasswordHash != "" {
-		t.Error("password_hash should not be in response")
+	if bytes.Contains(payload, []byte("super-secret-hash")) {
+		t.Fatalf("expected password hash value to be omitted from JSON, got %s", payload)
 	}
 }
 
-// TestMiddleware_RequiresAuth ensures protected routes require authentication
 func TestMiddleware_RequiresAuth(t *testing.T) {
-	authMiddleware := middleware.NewAuthMiddleware("test-secret")
+	authMiddleware := middleware.NewAuthMiddleware("test-secret", nil)
 
 	handler := authMiddleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -94,59 +89,9 @@ func TestMiddleware_RequiresAuth(t *testing.T) {
 	}
 }
 
-// TestSQLInjection_Prevention verifies inputs are not directly used in SQL
-func TestSQLInjection_Prevention(t *testing.T) {
-	// These are common SQL injection patterns that should be safely handled
-	maliciousInputs := []string{
-		"'; DROP TABLE users; --",
-		"1 OR 1=1",
-		"admin'--",
-		"1; DELETE FROM cards",
-		"' UNION SELECT * FROM users --",
-	}
-
-	for _, input := range maliciousInputs {
-		// Input should be usable without causing issues
-		// The actual protection is done by parameterized queries in the repo layer
-		if strings.Contains(input, "'") {
-			// Just verify we can safely process strings with quotes
-			escaped := strings.ReplaceAll(input, "'", "''")
-			if escaped == "" {
-				t.Errorf("escaping failed for input: %s", input)
-			}
-		}
-	}
-}
-
-// TestXSS_InputHandling verifies XSS payloads are handled
-func TestXSS_InputHandling(t *testing.T) {
-	// Common XSS patterns that might be submitted as card content
-	xssPayloads := []string{
-		"<script>alert('xss')</script>",
-		"<img src=x onerror=alert('xss')>",
-		"javascript:alert('xss')",
-		"<svg onload=alert('xss')>",
-	}
-
-	for _, payload := range xssPayloads {
-		// These are stored as-is in the database
-		// XSS prevention is done on the frontend via React's automatic escaping
-		// Verify the payload can be stored without issues
-		data, err := json.Marshal(map[string]string{"front": payload, "back": "answer"})
-		if err != nil {
-			t.Errorf("failed to marshal payload: %s", payload)
-		}
-		if len(data) == 0 {
-			t.Errorf("empty marshaled data for payload: %s", payload)
-		}
-	}
-}
-
-// TestAuthMiddleware_UserIDExtraction tests proper user ID extraction from context
 func TestAuthMiddleware_UserIDExtraction(t *testing.T) {
 	ctx := context.Background()
 
-	// No user ID in context
 	userID, ok := middleware.GetUserID(ctx)
 	if ok {
 		t.Error("expected ok=false when no user ID in context")
@@ -155,7 +100,6 @@ func TestAuthMiddleware_UserIDExtraction(t *testing.T) {
 		t.Error("expected nil UUID when no user ID in context")
 	}
 
-	// With user ID in context
 	expectedID := uuid.New()
 	ctx = context.WithValue(ctx, middleware.UserIDKey, expectedID)
 	userID, ok = middleware.GetUserID(ctx)
@@ -167,74 +111,100 @@ func TestAuthMiddleware_UserIDExtraction(t *testing.T) {
 	}
 }
 
-// TestInputValidation_CardContent verifies card content validation
-func TestInputValidation_CardContent(t *testing.T) {
-	tests := []struct {
-		name       string
-		body       map[string]string
-		wantStatus int
-	}{
-		{
-			name:       "empty front",
-			body:       map[string]string{"front": "", "back": "answer"},
-			wantStatus: http.StatusBadRequest,
-		},
-		{
-			name:       "empty back",
-			body:       map[string]string{"front": "question", "back": ""},
-			wantStatus: http.StatusBadRequest,
-		},
+func TestAuthHandler_SetTokenCookieUsesExpectedClaimsAndFlags(t *testing.T) {
+	h := &AuthHandler{
+		jwtSecret:     []byte("test-secret"),
+		secureCookies: true,
+	}
+	rec := httptest.NewRecorder()
+	userID := uuid.NewString()
+
+	if err := h.setTokenCookie(rec, userID, 7); err != nil {
+		t.Fatalf("setTokenCookie: %v", err)
 	}
 
-	// Create handler with nil repos to test validation
-	h := &CardHandler{}
+	tokenCookie := findCookie(rec.Result().Cookies(), "token")
+	if tokenCookie == nil {
+		t.Fatal("expected token cookie to be set")
+	}
+	if tokenCookie.Path != "/" {
+		t.Fatalf("cookie path = %q, want /", tokenCookie.Path)
+	}
+	if !tokenCookie.HttpOnly {
+		t.Fatal("expected token cookie to be HttpOnly")
+	}
+	if !tokenCookie.Secure {
+		t.Fatal("expected token cookie to be Secure")
+	}
+	if tokenCookie.MaxAge <= 0 {
+		t.Fatalf("cookie MaxAge = %d, want positive", tokenCookie.MaxAge)
+	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			body, _ := json.Marshal(tt.body)
-			req := httptest.NewRequest(http.MethodPost, "/api/decks/123/cards", bytes.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-			rec := httptest.NewRecorder()
+	setCookieHeader := rec.Header().Get("Set-Cookie")
+	if !strings.Contains(setCookieHeader, "SameSite=Strict") {
+		t.Fatalf("expected SameSite=Strict in Set-Cookie header, got %q", setCookieHeader)
+	}
 
-			// This will fail due to nil repos, but validation should happen first
-			// We're testing that validation logic exists
-			h.Create(rec, req)
-
-			// Will return 401 because no auth context, but that's expected
-			// The test documents the expected validation behavior
-		})
+	claims := &middleware.TokenClaims{}
+	token, err := jwt.ParseWithClaims(tokenCookie.Value, claims, func(token *jwt.Token) (any, error) {
+		return h.jwtSecret, nil
+	})
+	if err != nil {
+		t.Fatalf("parse token cookie: %v", err)
+	}
+	if !token.Valid {
+		t.Fatal("expected signed token cookie to be valid")
+	}
+	if claims.Subject != userID {
+		t.Fatalf("claims subject = %q, want %q", claims.Subject, userID)
+	}
+	if claims.TokenVersion != 7 {
+		t.Fatalf("claims token version = %d, want 7", claims.TokenVersion)
+	}
+	if claims.ExpiresAt == nil || time.Until(claims.ExpiresAt.Time) <= 0 {
+		t.Fatalf("expected token expiration in the future, got %#v", claims.ExpiresAt)
 	}
 }
 
-// TestCookieSecurity verifies cookie security settings
-func TestCookieSecurity(t *testing.T) {
-	// Test that logout clears cookie properly
-	h := &AuthHandler{}
+func TestAuthHandler_LogoutClearsCookie(t *testing.T) {
+	h := &AuthHandler{secureCookies: true}
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	rec := httptest.NewRecorder()
 
 	h.Logout(rec, req)
 
-	cookies := rec.Result().Cookies()
-	var tokenCookie *http.Cookie
-	for _, c := range cookies {
-		if c.Name == "token" {
-			tokenCookie = c
-			break
-		}
-	}
-
+	tokenCookie := findCookie(rec.Result().Cookies(), "token")
 	if tokenCookie == nil {
 		t.Fatal("expected token cookie to be set")
 	}
-
-	// Verify cookie is cleared
 	if tokenCookie.MaxAge != -1 {
-		t.Errorf("cookie MaxAge = %d, want -1", tokenCookie.MaxAge)
+		t.Fatalf("cookie MaxAge = %d, want -1", tokenCookie.MaxAge)
+	}
+	if !tokenCookie.Expires.Equal(time.Unix(0, 0)) {
+		t.Fatalf("cookie Expires = %s, want unix epoch", tokenCookie.Expires)
+	}
+	if tokenCookie.Path != "/" {
+		t.Fatalf("cookie path = %q, want /", tokenCookie.Path)
+	}
+	if !tokenCookie.HttpOnly {
+		t.Fatal("expected cleared cookie to remain HttpOnly")
+	}
+	if !tokenCookie.Secure {
+		t.Fatal("expected cleared cookie to retain Secure flag")
 	}
 
-	// Verify HttpOnly is set
-	if !tokenCookie.HttpOnly {
-		t.Error("cookie should be HttpOnly")
+	setCookieHeader := rec.Header().Get("Set-Cookie")
+	if !strings.Contains(setCookieHeader, "SameSite=Strict") {
+		t.Fatalf("expected SameSite=Strict in Set-Cookie header, got %q", setCookieHeader)
 	}
+}
+
+func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+
+	return nil
 }

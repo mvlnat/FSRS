@@ -1,17 +1,12 @@
 package handler
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-
-	"github.com/ziyangli/fsrs/backend/internal/middleware"
 	"github.com/ziyangli/fsrs/backend/internal/model"
 	"github.com/ziyangli/fsrs/backend/internal/repository"
 )
@@ -63,9 +58,8 @@ func validateDeckName(name string) error {
 }
 
 func (h *DeckHandler) List(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -79,20 +73,17 @@ func (h *DeckHandler) List(w http.ResponseWriter, r *http.Request) {
 		decksWithStats = []model.DeckWithStats{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(decksWithStats)
+	writeJSON(w, http.StatusOK, decksWithStats)
 }
 
 func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	var req createDeckRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req, 0) {
 		return
 	}
 
@@ -112,74 +103,45 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(deck)
+	writeJSON(w, http.StatusCreated, deck)
 }
 
 func (h *DeckHandler) Get(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	deckID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid deck ID", http.StatusBadRequest)
+	deckID, ok := parseUUIDParam(w, r, "id", "deck")
+	if !ok {
 		return
 	}
 
-	deck, err := h.deckRepo.GetByID(r.Context(), deckID)
-	if err == repository.ErrNotFound {
-		http.Error(w, "Deck not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	deck, ok := requireOwnedDeck(w, r, h.deckRepo, deckID, userID)
+	if !ok {
 		return
 	}
 
-	if deck.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(deck)
+	writeJSON(w, http.StatusOK, deck)
 }
 
 func (h *DeckHandler) Update(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	deckID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid deck ID", http.StatusBadRequest)
+	deckID, ok := parseUUIDParam(w, r, "id", "deck")
+	if !ok {
 		return
 	}
 
-	// Check ownership
-	existing, err := h.deckRepo.GetByID(r.Context(), deckID)
-	if err == repository.ErrNotFound {
-		http.Error(w, "Deck not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if existing.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	if _, ok := requireOwnedDeck(w, r, h.deckRepo, deckID, userID); !ok {
 		return
 	}
 
 	var req createDeckRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req, 0) {
 		return
 	}
 
@@ -199,35 +161,21 @@ func (h *DeckHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(deck)
+	writeJSON(w, http.StatusOK, deck)
 }
 
 func (h *DeckHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	deckID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid deck ID", http.StatusBadRequest)
+	deckID, ok := parseUUIDParam(w, r, "id", "deck")
+	if !ok {
 		return
 	}
 
-	// Check ownership
-	existing, err := h.deckRepo.GetByID(r.Context(), deckID)
-	if err == repository.ErrNotFound {
-		http.Error(w, "Deck not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if existing.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	if _, ok := requireOwnedDeck(w, r, h.deckRepo, deckID, userID); !ok {
 		return
 	}
 
@@ -240,30 +188,17 @@ func (h *DeckHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DeckHandler) Stats(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	deckID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid deck ID", http.StatusBadRequest)
+	deckID, ok := parseUUIDParam(w, r, "id", "deck")
+	if !ok {
 		return
 	}
 
-	// Check ownership
-	deck, err := h.deckRepo.GetByID(r.Context(), deckID)
-	if err == repository.ErrNotFound {
-		http.Error(w, "Deck not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if deck.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	if _, ok := requireOwnedDeck(w, r, h.deckRepo, deckID, userID); !ok {
 		return
 	}
 
@@ -273,8 +208,7 @@ func (h *DeckHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	writeJSON(w, http.StatusOK, stats)
 }
 
 // DeckExport is the JSON structure for importing/exporting decks
@@ -291,30 +225,18 @@ type CardExport struct {
 }
 
 func (h *DeckHandler) Export(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	deckID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid deck ID", http.StatusBadRequest)
+	deckID, ok := parseUUIDParam(w, r, "id", "deck")
+	if !ok {
 		return
 	}
 
-	// Check ownership
-	deck, err := h.deckRepo.GetByID(r.Context(), deckID)
-	if err == repository.ErrNotFound {
-		http.Error(w, "Deck not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if deck.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	deck, ok := requireOwnedDeck(w, r, h.deckRepo, deckID, userID)
+	if !ok {
 		return
 	}
 
@@ -339,28 +261,18 @@ func (h *DeckHandler) Export(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+sanitizeFilename(deck.Name)+".json\"")
-	json.NewEncoder(w).Encode(export)
+	writeJSON(w, http.StatusOK, export)
 }
 
 func (h *DeckHandler) Import(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// Limit request body size to 10MB
-	r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024)
-
 	var export DeckExport
-	if err := json.NewDecoder(r.Body).Decode(&export); err != nil {
-		if err.Error() == "http: request body too large" {
-			http.Error(w, "Request body too large (max 10MB)", http.StatusRequestEntityTooLarge)
-			return
-		}
-		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &export, 10*1024*1024) {
 		return
 	}
 
@@ -413,9 +325,7 @@ func (h *DeckHandler) Import(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(model.DeckWithStats{
+	writeJSON(w, http.StatusCreated, model.DeckWithStats{
 		Deck:  *deck,
 		Stats: *stats,
 	})

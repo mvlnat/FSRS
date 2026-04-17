@@ -8,18 +8,33 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+
+	"github.com/ziyangli/fsrs/backend/internal/model"
 )
 
 type contextKey string
 
 const UserIDKey contextKey = "userID"
 
-type AuthMiddleware struct {
-	jwtSecret []byte
+type UserReader interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*model.User, error)
 }
 
-func NewAuthMiddleware(jwtSecret string) *AuthMiddleware {
-	return &AuthMiddleware{jwtSecret: []byte(jwtSecret)}
+type TokenClaims struct {
+	TokenVersion int `json:"ver"`
+	jwt.RegisteredClaims
+}
+
+type AuthMiddleware struct {
+	jwtSecret []byte
+	userRepo  UserReader
+}
+
+func NewAuthMiddleware(jwtSecret string, userRepo UserReader) *AuthMiddleware {
+	return &AuthMiddleware{
+		jwtSecret: []byte(jwtSecret),
+		userRepo:  userRepo,
+	}
 }
 
 func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
@@ -44,7 +59,8 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		claims := &TokenClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
@@ -55,22 +71,18 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		userIDStr, ok := claims["sub"].(string)
-		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		userID, err := uuid.Parse(userIDStr)
+		userID, err := uuid.Parse(claims.Subject)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
+		}
+
+		if m.userRepo != nil {
+			user, err := m.userRepo.GetByID(r.Context(), userID)
+			if err != nil || user == nil || user.TokenVersion != claims.TokenVersion {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
 		}
 
 		ctx := context.WithValue(r.Context(), UserIDKey, userID)

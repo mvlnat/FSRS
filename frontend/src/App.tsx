@@ -8,24 +8,24 @@ import { DeckEdit } from './pages/DeckEdit';
 import { Study } from './pages/Study';
 import './App.css';
 
-function PrivateRoute({ children }: { children: React.ReactNode }) {
+function AuthRoute({
+  children,
+  publicOnly = false,
+}: {
+  children: React.ReactNode;
+  publicOnly?: boolean;
+}) {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
     return <div className="loading">Loading...</div>;
+  }
+
+  if (publicOnly) {
+    return !isAuthenticated ? <>{children}</> : <Navigate to="/" />;
   }
 
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
-}
-
-function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, loading } = useAuth();
-
-  if (loading) {
-    return <div className="loading">Loading...</div>;
-  }
-
-  return !isAuthenticated ? <>{children}</> : <Navigate to="/" />;
 }
 
 function Layout({ children }: { children: React.ReactNode }) {
@@ -56,41 +56,41 @@ function App() {
             <Route
               path="/login"
               element={
-                <PublicRoute>
+                <AuthRoute publicOnly>
                   <Login />
-                </PublicRoute>
+                </AuthRoute>
               }
             />
             <Route
               path="/register"
               element={
-                <PublicRoute>
+                <AuthRoute publicOnly>
                   <Register />
-                </PublicRoute>
+                </AuthRoute>
               }
             />
             <Route
               path="/"
               element={
-                <PrivateRoute>
+                <AuthRoute>
                   <Decks />
-                </PrivateRoute>
+                </AuthRoute>
               }
             />
             <Route
               path="/decks/:id"
               element={
-                <PrivateRoute>
+                <AuthRoute>
                   <DeckEdit />
-                </PrivateRoute>
+                </AuthRoute>
               }
             />
             <Route
               path="/study/:deckId"
               element={
-                <PrivateRoute>
+                <AuthRoute>
                   <Study />
-                </PrivateRoute>
+                </AuthRoute>
               }
             />
           </Routes>

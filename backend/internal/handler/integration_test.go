@@ -14,11 +14,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/ziyangli/fsrs/backend/internal/bootstrap"
 	"github.com/ziyangli/fsrs/backend/internal/handler"
 	"github.com/ziyangli/fsrs/backend/internal/middleware"
 	"github.com/ziyangli/fsrs/backend/internal/repository"
 	"github.com/ziyangli/fsrs/backend/internal/service"
-	dbmigrations "github.com/ziyangli/fsrs/backend/migrations"
 )
 
 // Integration tests require a running PostgreSQL database
@@ -72,22 +72,12 @@ func setupTestSchema(ctx context.Context) error {
 		DROP TABLE IF EXISTS cards CASCADE;
 		DROP TABLE IF EXISTS decks CASCADE;
 		DROP TABLE IF EXISTS users CASCADE;
+		DROP TABLE IF EXISTS schema_migrations CASCADE;
 	`); err != nil {
 		return err
 	}
 
-	scripts, err := dbmigrations.OrderedScripts()
-	if err != nil {
-		return err
-	}
-
-	for _, script := range scripts {
-		if _, err := testDB.Pool.Exec(ctx, script.SQL); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return bootstrap.RunMigrations(ctx, testDB)
 }
 
 func cleanupTestDB(ctx context.Context) {
@@ -99,6 +89,7 @@ func cleanupTestDB(ctx context.Context) {
 		DROP TABLE IF EXISTS cards CASCADE;
 		DROP TABLE IF EXISTS decks CASCADE;
 		DROP TABLE IF EXISTS users CASCADE;
+		DROP TABLE IF EXISTS schema_migrations CASCADE;
 	`)
 }
 
@@ -115,7 +106,7 @@ func setupTestRouter() *chi.Mux {
 	studyHandler := handler.NewStudyHandler(cardRepo, deckRepo, fsrsService)
 	tagHandler := handler.NewTagHandler(tagRepo, deckRepo, cardRepo)
 
-	authMiddleware := middleware.NewAuthMiddleware(testJWTSecret)
+	authMiddleware := middleware.NewAuthMiddleware(testJWTSecret, userRepo)
 
 	r := chi.NewRouter()
 
@@ -167,8 +158,8 @@ func TestIntegration_AuthFlow(t *testing.T) {
 
 	testRouter.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("register: got status %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("register: got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
 	}
 
 	// Extract cookie
@@ -229,6 +220,41 @@ func TestIntegration_AuthFlow(t *testing.T) {
 	}
 }
 
+func TestIntegration_LogoutRevokesExistingToken(t *testing.T) {
+	body := `{"email":"revoke@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("register: got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+
+	authCookie := rec.Result().Cookies()[0]
+
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("logout: got status %d, want %d", rec.Code, http.StatusNoContent)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("me after logout: got status %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestIntegration_AuthEmailNormalization(t *testing.T) {
 	body := `{"email":"Mixed.Case@example.com","password":"password123"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
@@ -237,8 +263,8 @@ func TestIntegration_AuthEmailNormalization(t *testing.T) {
 
 	testRouter.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("register: got status %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("register: got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
 	}
 
 	body = `{"email":"mixed.case@EXAMPLE.com","password":"password123"}`
@@ -259,8 +285,8 @@ func TestIntegration_AuthEmailNormalization(t *testing.T) {
 
 	testRouter.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("duplicate register: got status %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("duplicate register: got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
 	}
 }
 

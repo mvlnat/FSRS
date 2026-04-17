@@ -1,4 +1,4 @@
-import type { User, Deck, DeckWithStats, Card, CardWithState, CardState, DeckStats, Tag, DueCalendarDay } from '../types';
+import type { User, Deck, DeckWithStats, Card, CardWithState, CardState, Tag, DueCalendarDay } from '../types';
 
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:8080/api';
 const UNAUTHORIZED_EVENT = 'fsrs:unauthorized';
@@ -74,8 +74,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 // Auth
-export async function register(email: string, password: string): Promise<User> {
-  return request<User>('/auth/register', {
+export async function register(email: string, password: string): Promise<void> {
+  return request<void>('/auth/register', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
@@ -123,10 +123,6 @@ export async function deleteDeck(id: string): Promise<void> {
   return request<void>(`/decks/${id}`, { method: 'DELETE' });
 }
 
-export async function getDeckStats(id: string): Promise<DeckStats> {
-  return request<DeckStats>(`/decks/${id}/stats`);
-}
-
 // Import/Export
 export interface DeckExport {
   name: string;
@@ -148,10 +144,6 @@ export async function importDeck(data: DeckExport): Promise<DeckWithStats> {
 // Cards
 export async function getCards(deckId: string): Promise<CardWithState[]> {
   return request<CardWithState[]>(`/decks/${deckId}/cards`);
-}
-
-export async function getCard(id: string): Promise<Card> {
-  return request<Card>(`/cards/${id}`);
 }
 
 export async function createCard(deckId: string, front: string, back: string, link: string = ''): Promise<Card> {
@@ -227,11 +219,4 @@ export async function createTag(deckId: string, name: string): Promise<Tag> {
 
 export async function deleteTag(tagId: string): Promise<void> {
   return request<void>(`/tags/${tagId}`, { method: 'DELETE' });
-}
-
-export async function setCardTags(cardId: string, tagIds: string[]): Promise<Tag[]> {
-  return request<Tag[]>(`/cards/${cardId}/tags`, {
-    method: 'PUT',
-    body: JSON.stringify({ tag_ids: tagIds }),
-  });
 }

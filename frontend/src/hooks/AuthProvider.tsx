@@ -1,6 +1,16 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import * as api from '../api/client';
+import type { User } from '../types';
 import { AuthContext, type AuthState, type AuthContextType } from './auth-context';
+
+function getErrorStatus(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null || !('status' in error)) {
+    return null;
+  }
+
+  const status = (error as { status?: unknown }).status;
+  return typeof status === 'number' ? status : null;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -49,17 +59,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const setAuthenticated = (user: User) => {
+    authGenerationRef.current += 1;
+    ignoreUnauthorizedBeforeRef.current = api.getLatestRequestId();
+    setState({ user, loading: false, error: null });
+  };
+
+  const clearSession = () => {
+    authGenerationRef.current += 1;
+    ignoreUnauthorizedBeforeRef.current = api.getLatestRequestId();
+    setState({ user: null, loading: false, error: null });
+  };
+
+  const setAuthError = (err: unknown, fallbackMessage: string) => {
+    const message = err instanceof Error ? err.message : fallbackMessage;
+    setState((current) => ({ ...current, loading: false, error: message }));
+  };
+
   const login = async (email: string, password: string) => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const user = await api.login(email, password);
-      authGenerationRef.current += 1;
-      ignoreUnauthorizedBeforeRef.current = api.getLatestRequestId();
-      setState({ user, loading: false, error: null });
+      setAuthenticated(user);
       return user;
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Login failed';
-      setState((current) => ({ ...current, loading: false, error: message }));
+      setAuthError(err, 'Login failed');
       throw err;
     }
   };
@@ -67,14 +91,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (email: string, password: string) => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
-      const user = await api.register(email, password);
-      authGenerationRef.current += 1;
-      ignoreUnauthorizedBeforeRef.current = api.getLatestRequestId();
-      setState({ user, loading: false, error: null });
-      return user;
+      await api.register(email, password);
+
+      try {
+        const user = await api.getMe();
+        setAuthenticated(user);
+        return user;
+      } catch (err) {
+        if (getErrorStatus(err) === 401) {
+          clearSession();
+          return null;
+        }
+
+        setAuthError(err, 'Registration verification failed');
+        throw err;
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Registration failed';
-      setState((current) => ({ ...current, loading: false, error: message }));
+      setAuthError(err, 'Registration failed');
       throw err;
     }
   };
@@ -83,9 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.logout();
     } finally {
-      authGenerationRef.current += 1;
-      ignoreUnauthorizedBeforeRef.current = api.getLatestRequestId();
-      setState({ user: null, loading: false, error: null });
+      clearSession();
       window.location.href = '/';
     }
   };

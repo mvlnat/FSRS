@@ -1,15 +1,10 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 	_ "time/tzdata"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-
-	"github.com/ziyangli/fsrs/backend/internal/middleware"
 	"github.com/ziyangli/fsrs/backend/internal/model"
 	"github.com/ziyangli/fsrs/backend/internal/repository"
 	"github.com/ziyangli/fsrs/backend/internal/service"
@@ -36,30 +31,17 @@ type reviewRequest struct {
 const dueCalendarDateLayout = "2006-01-02"
 
 func (h *StudyHandler) GetDueCards(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	deckID, err := uuid.Parse(chi.URLParam(r, "deckId"))
-	if err != nil {
-		http.Error(w, "Invalid deck ID", http.StatusBadRequest)
+	deckID, ok := parseUUIDParam(w, r, "deckId", "deck")
+	if !ok {
 		return
 	}
 
-	// Check deck ownership
-	deck, err := h.deckRepo.GetByID(r.Context(), deckID)
-	if err == repository.ErrNotFound {
-		http.Error(w, "Deck not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if deck.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	if _, ok := requireOwnedDeck(w, r, h.deckRepo, deckID, userID); !ok {
 		return
 	}
 
@@ -73,26 +55,22 @@ func (h *StudyHandler) GetDueCards(w http.ResponseWriter, r *http.Request) {
 		cards = []model.CardWithState{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(cards)
+	writeJSON(w, http.StatusOK, cards)
 }
 
 func (h *StudyHandler) Review(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	cardID, err := uuid.Parse(chi.URLParam(r, "cardId"))
-	if err != nil {
-		http.Error(w, "Invalid card ID", http.StatusBadRequest)
+	cardID, ok := parseUUIDParam(w, r, "cardId", "card")
+	if !ok {
 		return
 	}
 
 	var req reviewRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if !decodeJSONBody(w, r, &req, 0) {
 		return
 	}
 
@@ -101,24 +79,7 @@ func (h *StudyHandler) Review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get card and check ownership
-	card, err := h.cardRepo.GetByID(r.Context(), cardID)
-	if err == repository.ErrNotFound {
-		http.Error(w, "Card not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	deck, err := h.deckRepo.GetByID(r.Context(), card.DeckID)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if deck.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	if _, ok := requireOwnedCard(w, r, h.cardRepo, cardID, userID); !ok {
 		return
 	}
 
@@ -137,14 +98,12 @@ func (h *StudyHandler) Review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(newState)
+	writeJSON(w, http.StatusOK, newState)
 }
 
 func (h *StudyHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -183,14 +142,12 @@ func (h *StudyHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 		calendar = []model.DueCalendarDay{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(calendar)
+	writeJSON(w, http.StatusOK, calendar)
 }
 
 func (h *StudyHandler) GetStats(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := requireUserID(w, r)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -200,8 +157,7 @@ func (h *StudyHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	writeJSON(w, http.StatusOK, stats)
 }
 
 func parseDueCalendarDate(value string, fallback time.Time) (time.Time, error) {

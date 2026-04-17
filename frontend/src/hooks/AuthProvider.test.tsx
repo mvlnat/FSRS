@@ -19,6 +19,10 @@ vi.mock('../api/client', () => ({
 const mockedApi = vi.mocked(api);
 let unauthorizedHandler: ((requestId: number) => void) | null = null;
 
+function apiError(status: number, message: string) {
+  return Object.assign(new Error(message), { status });
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -155,9 +159,12 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('error')).toHaveTextContent('none');
   });
 
-  it('exposes registration failures through the auth error state', async () => {
+  it('hydrates the session after a successful registration when the backend issues a session', async () => {
     mockedApi.getMe.mockRejectedValue(new Error('missing session'));
-    mockedApi.register.mockRejectedValue(new Error('Email already exists'));
+    mockedApi.register.mockResolvedValue(undefined);
+    mockedApi.getMe
+      .mockRejectedValueOnce(new Error('missing session'))
+      .mockResolvedValueOnce({ id: 'user-3', email: 'grace@example.com' });
     const user = userEvent.setup();
 
     renderWithProvider(<AuthActionHarness />);
@@ -169,7 +176,69 @@ describe('AuthProvider', () => {
     await user.click(screen.getByRole('button', { name: 'Register' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('error')).toHaveTextContent('Email already exists');
+      expect(screen.getByTestId('user-email')).toHaveTextContent('grace@example.com');
+    });
+    expect(screen.getByTestId('error')).toHaveTextContent('none');
+  });
+
+  it('keeps the user anonymous after an accepted registration without a session', async () => {
+    mockedApi.register.mockResolvedValue(undefined);
+    mockedApi.getMe
+      .mockRejectedValueOnce(new Error('missing session'))
+      .mockRejectedValueOnce(apiError(401, 'Unauthorized'));
+    const user = userEvent.setup();
+
+    renderWithProvider(<AuthActionHarness />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Register' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
+    });
+    expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+    expect(screen.getByTestId('error')).toHaveTextContent('none');
+  });
+
+  it('surfaces post-registration verification failures instead of treating them as an anonymous session', async () => {
+    mockedApi.register.mockResolvedValue(undefined);
+    mockedApi.getMe
+      .mockRejectedValueOnce(new Error('missing session'))
+      .mockRejectedValueOnce(apiError(503, 'temporary outage'));
+    const user = userEvent.setup();
+
+    renderWithProvider(<AuthActionHarness />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Register' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('error')).toHaveTextContent('temporary outage');
+    });
+    expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
+  });
+
+  it('exposes hard registration failures through the auth error state', async () => {
+    mockedApi.getMe.mockRejectedValue(new Error('missing session'));
+    mockedApi.register.mockRejectedValue(new Error('Password must be 72 bytes or fewer'));
+    const user = userEvent.setup();
+
+    renderWithProvider(<AuthActionHarness />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-email')).toHaveTextContent('none');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Register' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('error')).toHaveTextContent('Password must be 72 bytes or fewer');
     });
     expect(mockedApi.register).toHaveBeenCalledWith('grace@example.com', 'secret123');
   });

@@ -49,6 +49,29 @@ func (r *CardRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Card
 	return card, nil
 }
 
+func (r *CardRepository) GetOwnedByID(ctx context.Context, id, userID uuid.UUID) (*model.Card, error) {
+	card := &model.Card{}
+	var ownerID uuid.UUID
+	err := r.db.Pool.QueryRow(ctx, `
+		SELECT c.id, c.deck_id, c.front, c.back, c.link, c.created_at, d.user_id
+		FROM cards c
+		JOIN decks d ON c.deck_id = d.id
+		WHERE c.id = $1
+	`, id).Scan(&card.ID, &card.DeckID, &card.Front, &card.Back, &card.Link, &card.CreatedAt, &ownerID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if ownerID != userID {
+		return nil, ErrForbidden
+	}
+
+	return card, nil
+}
+
 func (r *CardRepository) ListByDeck(ctx context.Context, deckID uuid.UUID) ([]model.CardWithState, error) {
 	rows, err := r.db.Pool.Query(ctx, `
 		SELECT c.id, c.deck_id, c.front, c.back, c.link, c.created_at,

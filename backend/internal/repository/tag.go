@@ -58,6 +58,29 @@ func (r *TagRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Tag, 
 	return tag, nil
 }
 
+func (r *TagRepository) GetOwnedByID(ctx context.Context, id, userID uuid.UUID) (*model.Tag, error) {
+	tag := &model.Tag{}
+	var ownerID uuid.UUID
+	err := r.db.Pool.QueryRow(ctx, `
+		SELECT t.id, t.deck_id, t.name, t.created_at, d.user_id
+		FROM tags t
+		JOIN decks d ON t.deck_id = d.id
+		WHERE t.id = $1
+	`, id).Scan(&tag.ID, &tag.DeckID, &tag.Name, &tag.CreatedAt, &ownerID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if ownerID != userID {
+		return nil, ErrForbidden
+	}
+
+	return tag, nil
+}
+
 func (r *TagRepository) GetByIDs(ctx context.Context, ids []uuid.UUID) ([]model.Tag, error) {
 	if len(ids) == 0 {
 		return []model.Tag{}, nil
@@ -104,28 +127,6 @@ func (r *TagRepository) ListByDeck(ctx context.Context, deckID uuid.UUID) ([]mod
 	return tags, rows.Err()
 }
 
-func (r *TagRepository) Update(ctx context.Context, id uuid.UUID, name string) (*model.Tag, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, ErrInvalidInput
-	}
-
-	tag := &model.Tag{}
-	err := r.db.Pool.QueryRow(ctx,
-		`UPDATE tags SET name = $2 WHERE id = $1
-		 RETURNING id, deck_id, name, created_at`,
-		id, name,
-	).Scan(&tag.ID, &tag.DeckID, &tag.Name, &tag.CreatedAt)
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return tag, nil
-}
-
 func (r *TagRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	result, err := r.db.Pool.Exec(ctx, `DELETE FROM tags WHERE id = $1`, id)
 	if err != nil {
@@ -135,24 +136,6 @@ func (r *TagRepository) Delete(ctx context.Context, id uuid.UUID) error {
 		return ErrNotFound
 	}
 	return nil
-}
-
-// AddTagToCard associates a tag with a card
-func (r *TagRepository) AddTagToCard(ctx context.Context, cardID, tagID uuid.UUID) error {
-	_, err := r.db.Pool.Exec(ctx,
-		`INSERT INTO card_tags (card_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-		cardID, tagID,
-	)
-	return err
-}
-
-// RemoveTagFromCard removes a tag association from a card
-func (r *TagRepository) RemoveTagFromCard(ctx context.Context, cardID, tagID uuid.UUID) error {
-	_, err := r.db.Pool.Exec(ctx,
-		`DELETE FROM card_tags WHERE card_id = $1 AND tag_id = $2`,
-		cardID, tagID,
-	)
-	return err
 }
 
 // GetTagsForCard returns all tags for a specific card

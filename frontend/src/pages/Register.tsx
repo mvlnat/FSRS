@@ -2,6 +2,10 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
+function getPasswordByteLength(value: string) {
+  return new TextEncoder().encode(value).length;
+}
+
 export function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,10 +22,23 @@ export function Register() {
       setError('Passwords do not match');
       return;
     }
+    if (getPasswordByteLength(password) > 72) {
+      setError('Password must be 72 bytes or fewer');
+      return;
+    }
 
     try {
-      await register(email, password);
-      navigate('/');
+      const user = await register(email, password);
+      if (user) {
+        navigate('/');
+        return;
+      }
+
+      navigate('/login', {
+        state: {
+          info: 'If the email is available, the account is ready to sign in.',
+        },
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     }
