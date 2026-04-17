@@ -90,25 +90,80 @@ docker rm -f fsrs-test-postgres
 
 ## Preferred Development Workflow
 
-Use a separate git branch for code changes. The expected flow is:
+Use separate sibling clones for concurrent work. Do not use `git worktree` for agent or programmer isolation here because worktrees share the same repository refs and can race each other.
 
-1. Start from `main` and create a new branch.
-2. Make changes on that branch.
-3. Run the backend/frontend checks.
-4. Commit the branch work.
-5. Merge the verified branch into `main`.
-6. Release from the verified `main` state. If your current checkout is on another branch or has local drift, use a separate worktree pinned to `main` for release verification and packaging.
-7. Build production Docker images locally only. Do not build on the droplet.
-8. Transfer only the release artifacts needed by production, load the prebuilt images on the droplet, and restart the stack from the canonical `docker-compose.prod.yml`.
-9. Clean up the droplet after deploy so it remains runtime-only instead of becoming a copy of the development workspace.
+Recommended local layout:
 
-Example:
+- `/Users/ziyangli/Coding/fsrs`: canonical `main` checkout used for merge, release verification, and deployment
+- `/Users/ziyangli/Coding/fsrs2`: isolated bug-fix development clone
+- `/Users/ziyangli/Coding/fsrs3`: isolated new-feature development clone
+
+If `fsrs2` or `fsrs3` are already busy, create another sibling clone with the next free `fsrs#` name instead of sharing an active checkout.
+
+One-time setup for the extra clones:
+
+```bash
+cd /Users/ziyangli/Coding
+git clone git@github.com:mvlnat/FSRS.git fsrs2
+git clone git@github.com:mvlnat/FSRS.git fsrs3
+```
+
+Example for adding another isolated clone later:
+
+```bash
+cd /Users/ziyangli/Coding
+git clone git@github.com:mvlnat/FSRS.git fsrs4
+```
+
+Expected flow:
+
+1. Pick the correct isolated clone for the work: use `fsrs2` for bug fixes and `fsrs3` for new features. If those are already in use, create a new sibling clone such as `fsrs4`.
+2. Update it from `origin/main` and create a new branch there.
+3. Make changes and run the backend/frontend checks inside that clone only.
+4. Commit the branch work in that clone.
+5. Push the branch or otherwise make it available for review.
+6. Merge the verified branch into `main` from the canonical `/Users/ziyangli/Coding/fsrs` clone.
+7. Release from the verified `main` state in `/Users/ziyangli/Coding/fsrs`.
+8. Build production Docker images locally only. Do not build on the droplet.
+9. Transfer only the release artifacts needed by production, load the prebuilt images on the droplet, and restart the stack from the canonical `docker-compose.prod.yml`.
+10. Clean up the droplet after deploy so it remains runtime-only instead of becoming a copy of the development workspace.
+
+Example isolated branch flow:
+
+```bash
+cd /Users/ziyangli/Coding/fsrs2
+git fetch origin
+git switch main
+git pull --ff-only
+git switch -c <change-branch>
+```
+
+For new feature work, start in `fsrs3` instead:
+
+```bash
+cd /Users/ziyangli/Coding/fsrs3
+git fetch origin
+git switch main
+git pull --ff-only
+git switch -c <feature-branch>
+```
+
+Example merge flow from the canonical `main` clone:
 
 ```bash
 cd /Users/ziyangli/Coding/fsrs
-git checkout main
+git fetch origin
+git switch main
 git pull --ff-only
-git checkout -b <change-branch>
+git merge --ff-only origin/<change-branch>
+```
+
+If a branch has not been pushed yet, the canonical clone can fetch it directly from a sibling clone without sharing refs:
+
+```bash
+cd /Users/ziyangli/Coding/fsrs
+git fetch ../fsrs2 <change-branch>
+git merge --ff-only FETCH_HEAD
 ```
 
 ## Production Notes
