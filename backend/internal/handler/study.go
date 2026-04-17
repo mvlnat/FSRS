@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -30,6 +31,8 @@ func NewStudyHandler(cardRepo *repository.CardRepository, deckRepo *repository.D
 type reviewRequest struct {
 	Rating int `json:"rating"` // 1=Again, 2=Hard, 3=Good, 4=Easy
 }
+
+const dueCalendarDateLayout = "2006-01-02"
 
 func (h *StudyHandler) GetDueCards(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
@@ -137,6 +140,61 @@ func (h *StudyHandler) Review(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(newState)
 }
 
+func (h *StudyHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	timezone := r.URL.Query().Get("timezone")
+	if timezone == "" {
+		timezone = "UTC"
+	}
+
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		http.Error(w, "Invalid timezone", http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now().In(location)
+	startDate, err := parseDueCalendarDate(r.URL.Query().Get("start"), now)
+	if err != nil {
+		http.Error(w, "Invalid start date", http.StatusBadRequest)
+		return
+	}
+
+	endDate, err := parseDueCalendarDate(r.URL.Query().Get("end"), time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, location))
+	if err != nil {
+		http.Error(w, "Invalid end date", http.StatusBadRequest)
+		return
+	}
+
+	if endDate.Before(startDate) {
+		http.Error(w, "End date must be on or after start date", http.StatusBadRequest)
+		return
+	}
+
+	if endDate.Sub(startDate) > 120*24*time.Hour {
+		http.Error(w, "Date range must be 120 days or fewer", http.StatusBadRequest)
+		return
+	}
+
+	calendar, err := h.cardRepo.GetDueCalendar(r.Context(), userID, timezone, startDate, endDate)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if calendar == nil {
+		calendar = []model.DueCalendarDay{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(calendar)
+}
+
 func (h *StudyHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {
@@ -152,4 +210,17 @@ func (h *StudyHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+func parseDueCalendarDate(value string, fallback time.Time) (time.Time, error) {
+	if value == "" {
+		return time.Date(fallback.Year(), fallback.Month(), fallback.Day(), 0, 0, 0, 0, fallback.Location()), nil
+	}
+
+	parsed, err := time.ParseInLocation(dueCalendarDateLayout, value, fallback.Location())
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return parsed, nil
 }

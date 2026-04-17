@@ -478,6 +478,268 @@ button:disabled {
   }
 }
 
+/* Due Calendar */
+.due-calendar-card {
+  background: linear-gradient(145deg, #fbf7ef 0%, #f5ecda 100%);
+  border: 1px solid #eadbc0;
+  border-radius: 24px;
+  padding: 28px 32px;
+  margin-bottom: 32px;
+  box-shadow: 0 20px 40px rgba(112, 87, 32, 0.08);
+}
+
+.due-calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.due-calendar-header h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8c6a2f;
+}
+
+.due-calendar-subtitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #33230b;
+}
+
+.due-calendar-header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.due-calendar-summary {
+  margin: 0;
+  font-size: 14px;
+  color: #745626;
+}
+
+.due-calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.due-calendar-nav-btn,
+.due-calendar-today-btn {
+  padding: 10px 16px;
+  font-size: 14px;
+}
+
+.due-calendar-month {
+  min-width: 140px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: #33230b;
+}
+
+.due-calendar-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.9fr);
+  gap: 20px;
+}
+
+.due-calendar-grid,
+.due-calendar-detail {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(140, 106, 47, 0.14);
+  border-radius: 20px;
+  padding: 18px;
+}
+
+.due-calendar-weekdays,
+.due-calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.due-calendar-weekdays {
+  margin-bottom: 8px;
+}
+
+.due-calendar-weekdays span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8c6a2f;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.due-calendar-day {
+  min-height: 88px;
+  padding: 12px 10px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.78);
+  color: #33230b;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.due-calendar-day:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(112, 87, 32, 0.08);
+}
+
+.due-calendar-day.is-outside-month {
+  opacity: 0.58;
+}
+
+.due-calendar-day.is-today {
+  border-color: rgba(0, 113, 227, 0.35);
+}
+
+.due-calendar-day.is-selected {
+  border-color: #8c6a2f;
+  box-shadow: 0 0 0 3px rgba(140, 106, 47, 0.14);
+}
+
+.due-calendar-day[data-tone='empty'] {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.due-calendar-day[data-tone='low'] {
+  background: rgba(226, 193, 128, 0.24);
+}
+
+.due-calendar-day[data-tone='medium'] {
+  background: rgba(214, 160, 77, 0.3);
+}
+
+.due-calendar-day[data-tone='high'] {
+  background: rgba(201, 121, 44, 0.34);
+}
+
+.due-calendar-day[data-tone='peak'] {
+  background: rgba(176, 88, 34, 0.4);
+  color: #2d1404;
+}
+
+.due-calendar-day-number {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.due-calendar-day-count {
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.due-calendar-detail-label {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8c6a2f;
+}
+
+.due-calendar-detail h3 {
+  margin: 0 0 12px;
+  font-size: 24px;
+  line-height: 1.2;
+  color: #33230b;
+}
+
+.due-calendar-detail-total {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #33230b;
+}
+
+.due-calendar-deck-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.due-calendar-deck-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(140, 106, 47, 0.08);
+  color: #33230b;
+  text-decoration: none;
+}
+
+.due-calendar-deck-item:hover {
+  background: rgba(140, 106, 47, 0.14);
+  text-decoration: none;
+}
+
+.due-calendar-deck-item strong {
+  font-size: 18px;
+}
+
+.due-calendar-empty {
+  margin: 0;
+  color: #745626;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .due-calendar-card {
+    padding: 22px 18px;
+  }
+
+  .due-calendar-header {
+    flex-direction: column;
+  }
+
+  .due-calendar-header-actions {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .due-calendar-nav {
+    justify-content: flex-start;
+  }
+
+  .due-calendar-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .due-calendar-grid,
+  .due-calendar-detail {
+    padding: 16px;
+  }
+
+  .due-calendar-day {
+    min-height: 76px;
+    padding: 10px 8px;
+  }
+
+  .due-calendar-day-number {
+    font-size: 16px;
+  }
+
+  .due-calendar-day-count {
+    font-size: 11px;
+  }
+}
+
 /* Deck Edit Page */
 .deck-edit-container {
   max-width: 860px;

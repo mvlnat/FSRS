@@ -1,4 +1,4 @@
-import type { User, Deck, DeckWithStats, Card, CardWithState, CardState, DeckStats, Tag } from '../types';
+import type { User, Deck, DeckWithStats, Card, CardWithState, CardState, DeckStats, Tag, DueCalendarDay } from '../types';
 
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:8080/api';
 const UNAUTHORIZED_EVENT = 'fsrs:unauthorized';
@@ -206,6 +206,11 @@ export interface StudyStats {
 
 export async function getStudyStats(): Promise<StudyStats> {
   return request<StudyStats>('/study/stats');
+}
+
+export async function getDueCalendar(start: string, end: string, timezone: string): Promise<DueCalendarDay[]> {
+  const params = new URLSearchParams({ start, end, timezone });
+  return request<DueCalendarDay[]>(`/study/schedule?${params.toString()}`);
 }
 
 // Tags

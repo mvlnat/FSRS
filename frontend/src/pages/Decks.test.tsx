@@ -9,6 +9,7 @@ import { Decks } from './Decks';
 vi.mock('../api/client', () => ({
   getDecks: vi.fn(),
   getStudyStats: vi.fn(),
+  getDueCalendar: vi.fn(),
   createDeck: vi.fn(),
   exportDeck: vi.fn(),
   importDeck: vi.fn(),
@@ -54,6 +55,7 @@ describe('Decks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedApi.getStudyStats.mockResolvedValue(zeroStats);
+    mockedApi.getDueCalendar.mockResolvedValue([]);
   });
 
   it('clears a stale load error after a successful create-triggered reload', async () => {
@@ -91,5 +93,34 @@ describe('Decks', () => {
 
     expect(screen.getByRole('button', { name: 'Create Deck' })).toBeDisabled();
     expect(mockedApi.createDeck).not.toHaveBeenCalled();
+  });
+
+  it('renders the due calendar with per-day deck details', async () => {
+    const user = userEvent.setup();
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    mockedApi.getDecks.mockResolvedValue([deckWithStats]);
+    mockedApi.getDueCalendar.mockResolvedValue([
+      {
+        date: todayKey,
+        total: 3,
+        decks: [
+          { deck_id: 'deck-1', deck_name: 'Biology', count: 2 },
+          { deck_id: 'deck-2', deck_name: 'History', count: 1 },
+        ],
+      },
+    ]);
+
+    renderDecks();
+
+    await screen.findByRole('heading', { name: 'Due Calendar' });
+    await screen.findByText('3 cards due this month');
+
+    await user.click(screen.getByRole('button', { name: `View due cards for ${todayKey}` }));
+
+    expect(screen.getByRole('link', { name: 'Biology, 2 cards due' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'History, 1 card due' })).toBeInTheDocument();
+    expect(screen.getByText('3 cards due', { selector: '.due-calendar-detail-total' })).toBeInTheDocument();
   });
 });

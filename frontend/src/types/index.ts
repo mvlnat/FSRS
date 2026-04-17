@@ -64,6 +64,18 @@ export interface Review {
   reviewed_at: string;
 }
 
+export interface DueCalendarDeck {
+  deck_id: string;
+  deck_name: string;
+  count: number;
+}
+
+export interface DueCalendarDay {
+  date: string;
+  total: number;
+  decks: DueCalendarDeck[];
+}
+
 export type Rating = 1 | 2 | 3 | 4;
 
 export const RATING_LABELS: Record<Rating, string> = {

@@ -298,6 +298,13 @@ type StudyStats struct {
 	RetentionRate      float64 `json:"retentionRate"` // % of reviews rated 3 or 4
 }
 
+type dueCalendarRow struct {
+	Date     time.Time
+	DeckID   uuid.UUID
+	DeckName string
+	Count    int
+}
+
 func (r *CardRepository) GetUserStudyStats(ctx context.Context, userID uuid.UUID) (*StudyStats, error) {
 	stats := &StudyStats{}
 	var avgRating, retentionRate *float64
@@ -326,6 +333,65 @@ func (r *CardRepository) GetUserStudyStats(ctx context.Context, userID uuid.UUID
 	}
 
 	return stats, nil
+}
+
+func (r *CardRepository) GetDueCalendar(ctx context.Context, userID uuid.UUID, timezone string, startDate, endDate time.Time) ([]model.DueCalendarDay, error) {
+	rows, err := r.db.Pool.Query(ctx, `
+		SELECT
+			(cs.due AT TIME ZONE $2)::date AS due_date,
+			d.id,
+			d.name,
+			COUNT(*) AS due_count
+		FROM card_states cs
+		JOIN cards c ON cs.card_id = c.id
+		JOIN decks d ON c.deck_id = d.id
+		WHERE d.user_id = $1
+			AND (cs.due AT TIME ZONE $2)::date BETWEEN $3 AND $4
+		GROUP BY due_date, d.id, d.name
+		ORDER BY due_date ASC, due_count DESC, d.name ASC
+	`, userID, timezone, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byDate := make(map[string]*model.DueCalendarDay)
+	orderedDates := make([]string, 0)
+
+	for rows.Next() {
+		var row dueCalendarRow
+		if err := rows.Scan(&row.Date, &row.DeckID, &row.DeckName, &row.Count); err != nil {
+			return nil, err
+		}
+
+		dateKey := row.Date.Format("2006-01-02")
+		entry, exists := byDate[dateKey]
+		if !exists {
+			entry = &model.DueCalendarDay{
+				Date:  dateKey,
+				Decks: []model.DueCalendarDeck{},
+			}
+			byDate[dateKey] = entry
+			orderedDates = append(orderedDates, dateKey)
+		}
+
+		entry.Total += row.Count
+		entry.Decks = append(entry.Decks, model.DueCalendarDeck{
+			DeckID:   row.DeckID,
+			DeckName: row.DeckName,
+			Count:    row.Count,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	calendar := make([]model.DueCalendarDay, 0, len(orderedDates))
+	for _, dateKey := range orderedDates {
+		calendar = append(calendar, *byDate[dateKey])
+	}
+
+	return calendar, nil
 }
 
 func (r *CardRepository) ApplyReview(ctx context.Context, cardID uuid.UUID, rating int, reviewFn func(currentState *model.CardState) *model.CardState) (*model.CardState, error) {

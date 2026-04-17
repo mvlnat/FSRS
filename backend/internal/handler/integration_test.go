@@ -150,6 +150,7 @@ func setupTestRouter() *chi.Mux {
 		r.Put("/api/cards/{cardId}/tags", tagHandler.SetCardTags)
 
 		r.Get("/api/study/stats", studyHandler.GetStats)
+		r.Get("/api/study/schedule", studyHandler.GetSchedule)
 		r.Get("/api/study/{deckId}", studyHandler.GetDueCards)
 		r.Post("/api/study/{cardId}/review", studyHandler.Review)
 	})
