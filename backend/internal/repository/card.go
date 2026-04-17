@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -336,6 +337,9 @@ func (r *CardRepository) GetUserStudyStats(ctx context.Context, userID uuid.UUID
 }
 
 func (r *CardRepository) GetDueCalendar(ctx context.Context, userID uuid.UUID, timezone string, startDate, endDate time.Time) ([]model.DueCalendarDay, error) {
+	byDate := make(map[string]*model.DueCalendarDay)
+	orderedDates := make([]string, 0)
+
 	rows, err := r.db.Pool.Query(ctx, `
 		SELECT
 			(cs.due AT TIME ZONE $2)::date AS due_date,
@@ -355,36 +359,57 @@ func (r *CardRepository) GetDueCalendar(ctx context.Context, userID uuid.UUID, t
 	}
 	defer rows.Close()
 
-	byDate := make(map[string]*model.DueCalendarDay)
-	orderedDates := make([]string, 0)
-
 	for rows.Next() {
 		var row dueCalendarRow
 		if err := rows.Scan(&row.Date, &row.DeckID, &row.DeckName, &row.Count); err != nil {
 			return nil, err
 		}
 
-		dateKey := row.Date.Format("2006-01-02")
-		entry, exists := byDate[dateKey]
-		if !exists {
-			entry = &model.DueCalendarDay{
-				Date:  dateKey,
-				Decks: []model.DueCalendarDeck{},
-			}
-			byDate[dateKey] = entry
-			orderedDates = append(orderedDates, dateKey)
-		}
-
-		entry.Total += row.Count
-		entry.Decks = append(entry.Decks, model.DueCalendarDeck{
-			DeckID:   row.DeckID,
-			DeckName: row.DeckName,
-			Count:    row.Count,
-		})
+		addDueCalendarRow(byDate, &orderedDates, row.Date.Format("2006-01-02"), row.DeckID, row.DeckName, row.Count)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
+	nowLocalDate := time.Now().In(startDate.Location())
+	nowLocalDate = time.Date(nowLocalDate.Year(), nowLocalDate.Month(), nowLocalDate.Day(), 0, 0, 0, 0, nowLocalDate.Location())
+	if !nowLocalDate.Before(startDate) && !nowLocalDate.After(endDate) {
+
+		newCardRows, err := r.db.Pool.Query(ctx, `
+			SELECT
+				d.id,
+				d.name,
+				COUNT(*) AS due_count
+			FROM cards c
+			JOIN decks d ON c.deck_id = d.id
+			LEFT JOIN card_states cs ON c.id = cs.card_id
+			WHERE d.user_id = $1
+				AND cs.id IS NULL
+			GROUP BY d.id, d.name
+			ORDER BY due_count DESC, d.name ASC
+		`, userID)
+		if err != nil {
+			return nil, err
+		}
+		defer newCardRows.Close()
+
+		dateKey := nowLocalDate.Format("2006-01-02")
+		for newCardRows.Next() {
+			var deckID uuid.UUID
+			var deckName string
+			var count int
+			if err := newCardRows.Scan(&deckID, &deckName, &count); err != nil {
+				return nil, err
+			}
+
+			addDueCalendarRow(byDate, &orderedDates, dateKey, deckID, deckName, count)
+		}
+		if err := newCardRows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	sort.Strings(orderedDates)
 
 	calendar := make([]model.DueCalendarDay, 0, len(orderedDates))
 	for _, dateKey := range orderedDates {
@@ -392,6 +417,25 @@ func (r *CardRepository) GetDueCalendar(ctx context.Context, userID uuid.UUID, t
 	}
 
 	return calendar, nil
+}
+
+func addDueCalendarRow(byDate map[string]*model.DueCalendarDay, orderedDates *[]string, dateKey string, deckID uuid.UUID, deckName string, count int) {
+	entry, exists := byDate[dateKey]
+	if !exists {
+		entry = &model.DueCalendarDay{
+			Date:  dateKey,
+			Decks: []model.DueCalendarDeck{},
+		}
+		byDate[dateKey] = entry
+		*orderedDates = append(*orderedDates, dateKey)
+	}
+
+	entry.Total += count
+	entry.Decks = append(entry.Decks, model.DueCalendarDeck{
+		DeckID:   deckID,
+		DeckName: deckName,
+		Count:    count,
+	})
 }
 
 func (r *CardRepository) ApplyReview(ctx context.Context, cardID uuid.UUID, rating int, reviewFn func(currentState *model.CardState) *model.CardState) (*model.CardState, error) {

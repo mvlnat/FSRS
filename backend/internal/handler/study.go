@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -147,16 +148,7 @@ func (h *StudyHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	timezone := r.URL.Query().Get("timezone")
-	if timezone == "" {
-		timezone = "UTC"
-	}
-
-	location, err := time.LoadLocation(timezone)
-	if err != nil {
-		http.Error(w, "Invalid timezone", http.StatusBadRequest)
-		return
-	}
+	location, timezone := resolveDueCalendarTimezone(r.URL.Query().Get("timezone"))
 
 	now := time.Now().In(location)
 	startDate, err := parseDueCalendarDate(r.URL.Query().Get("start"), now)
@@ -223,4 +215,17 @@ func parseDueCalendarDate(value string, fallback time.Time) (time.Time, error) {
 	}
 
 	return parsed, nil
+}
+
+func resolveDueCalendarTimezone(value string) (*time.Location, string) {
+	if value == "" {
+		return time.UTC, time.UTC.String()
+	}
+
+	location, err := time.LoadLocation(value)
+	if err != nil {
+		return time.UTC, time.UTC.String()
+	}
+
+	return location, location.String()
 }

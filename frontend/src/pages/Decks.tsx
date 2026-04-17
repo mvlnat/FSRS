@@ -365,6 +365,64 @@ export function Decks() {
         </div>
       )}
 
+      {showCreate && (
+        <form onSubmit={handleCreate} className="create-deck-form">
+          <div className="form-group">
+            <label htmlFor="name">Name</label>
+            <input
+              id="name"
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="description">Description</label>
+            <textarea
+              id="description"
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+            />
+          </div>
+          <button type="submit" disabled={!newName.trim()}>
+            Create Deck
+          </button>
+        </form>
+      )}
+
+      <div className="decks-list">
+        {decks.length === 0 ? (
+          <p>No decks yet. Create your first deck to get started!</p>
+        ) : (
+          decks.map((deck) => (
+            <div key={deck.id} className="deck-card">
+              <div className="deck-info">
+                <h3>{deck.name}</h3>
+                {deck.description && <p>{deck.description}</p>}
+                <div className="deck-stats">
+                  <span>Total: {deck.stats.total}</span>
+                  <span>New: {deck.stats.new}</span>
+                  <span>Due: {deck.stats.due}</span>
+                  <span>Learning: {deck.stats.learning}</span>
+                </div>
+              </div>
+              <div className="deck-actions">
+                <Link to={`/study/${deck.id}`} className="btn-study">
+                  Study
+                </Link>
+                <Link to={`/decks/${deck.id}`} className="btn-edit">
+                  Edit
+                </Link>
+                <button onClick={() => handleExport(deck.id, deck.name)} className="btn-export">
+                  Export
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
       <section className="due-calendar-card" aria-labelledby="due-calendar-title">
         <div className="due-calendar-header">
           <div>
@@ -459,64 +517,6 @@ export function Decks() {
           </aside>
         </div>
       </section>
-
-      {showCreate && (
-        <form onSubmit={handleCreate} className="create-deck-form">
-          <div className="form-group">
-            <label htmlFor="name">Name</label>
-            <input
-              id="name"
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="description">Description</label>
-            <textarea
-              id="description"
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
-            />
-          </div>
-          <button type="submit" disabled={!newName.trim()}>
-            Create Deck
-          </button>
-        </form>
-      )}
-
-      <div className="decks-list">
-        {decks.length === 0 ? (
-          <p>No decks yet. Create your first deck to get started!</p>
-        ) : (
-          decks.map((deck) => (
-            <div key={deck.id} className="deck-card">
-              <div className="deck-info">
-                <h3>{deck.name}</h3>
-                {deck.description && <p>{deck.description}</p>}
-                <div className="deck-stats">
-                  <span>Total: {deck.stats.total}</span>
-                  <span>New: {deck.stats.new}</span>
-                  <span>Due: {deck.stats.due}</span>
-                  <span>Learning: {deck.stats.learning}</span>
-                </div>
-              </div>
-              <div className="deck-actions">
-                <Link to={`/study/${deck.id}`} className="btn-study">
-                  Study
-                </Link>
-                <Link to={`/decks/${deck.id}`} className="btn-edit">
-                  Edit
-                </Link>
-                <button onClick={() => handleExport(deck.id, deck.name)} className="btn-export">
-                  Export
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
     </div>
   );
 }
