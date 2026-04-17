@@ -162,6 +162,10 @@ func (h *TagHandler) SetCardTags(w http.ResponseWriter, r *http.Request) {
 	if !decodeStrictJSONBody(w, r, &req, 0) {
 		return
 	}
+	if req.TagIDs == nil {
+		http.Error(w, "tag_ids is required", http.StatusBadRequest)
+		return
+	}
 
 	tagIDs, ok := parseUniqueTagIDs(w, req.TagIDs)
 	if !ok {
