@@ -2,9 +2,43 @@
 
 ## Workflow Reminders
 
-1. **Always git commit** - Commit changes after completing features or fixes
-2. **Always run unit tests** - Run tests before committing
-3. **Always build and push** - After tests pass, build Docker images and deploy to droplet
+1. **Start in a worktree and branch** - For code changes, create a dedicated git worktree and branch from `main`
+2. **Develop off `main`** - Make and verify changes in that worktree/branch instead of editing directly on `main`
+3. **Try to add tests for new work** - Add or update tests for new development and behavior changes whenever practical
+4. **Commit branch work** - Commit changes on the branch once the change and tests are in good shape
+5. **Always run checks before merge** - Run backend/frontend tests and builds before moving a change forward
+6. **Review before merge** - Do code review before moving branch work into `main`
+7. **Merge before deploy** - Once the reviewed branch looks good, merge it into `main`
+8. **Always build and push from `main`** - After the merged `main` state passes checks, build Docker images and deploy to droplet
+
+## Preferred Git Flow
+
+1. Create a fresh worktree and branch from `main`
+```bash
+git checkout main
+git pull --ff-only
+git worktree add ../fsrs-<change-branch> -b <change-branch> main
+```
+
+2. Make changes and verify them inside that worktree
+
+3. Try to add or update tests for the new work before finishing the branch
+
+4. Commit the branch work
+```bash
+git add <files>
+git commit -m "<message>"
+```
+
+5. Review the branch and fix findings
+
+6. Merge back into `main` once the change looks good
+```bash
+git checkout main
+git merge --ff-only <change-branch>
+```
+
+7. Build and deploy from `main`
 
 ## Commands
 
@@ -18,6 +52,7 @@ devbox run bash -lc 'cd frontend && npm run build'
 
 ### Build Docker Images (for amd64 server)
 ```bash
+git checkout main
 docker build --platform linux/amd64 -t fsrs-backend -f backend/Dockerfile ./backend
 docker build --platform linux/amd64 -t fsrs-frontend -f frontend/Dockerfile ./frontend
 ```
@@ -26,6 +61,7 @@ docker build --platform linux/amd64 -t fsrs-frontend -f frontend/Dockerfile ./fr
 
 **Step 1: Build for amd64**
 ```bash
+git checkout main
 docker build --platform linux/amd64 -t fsrs-backend -f backend/Dockerfile ./backend
 docker build --platform linux/amd64 -t fsrs-frontend -f frontend/Dockerfile ./frontend
 ```

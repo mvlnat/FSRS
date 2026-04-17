@@ -19,9 +19,10 @@ func decodeStrictJSONBody(w http.ResponseWriter, r *http.Request, dst any, limit
 }
 
 func decodeJSONBodyWithOptions(w http.ResponseWriter, r *http.Request, dst any, limit int64, strict bool) bool {
-	if limit > 0 {
-		r.Body = http.MaxBytesReader(w, r.Body, limit)
+	if limit <= 0 {
+		limit = defaultJSONBodyLimit
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 
 	decoder := json.NewDecoder(r.Body)
 	if strict {

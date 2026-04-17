@@ -3,15 +3,6 @@ import * as api from '../api/client';
 import type { User } from '../types';
 import { AuthContext, type AuthState, type AuthContextType } from './auth-context';
 
-function getErrorStatus(error: unknown): number | null {
-  if (typeof error !== 'object' || error === null || !('status' in error)) {
-    return null;
-  }
-
-  const status = (error as { status?: unknown }).status;
-  return typeof status === 'number' ? status : null;
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -92,20 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       await api.register(email, password);
-
-      try {
-        const user = await api.getMe();
-        setAuthenticated(user);
-        return user;
-      } catch (err) {
-        if (getErrorStatus(err) === 401) {
-          clearSession();
-          return null;
-        }
-
-        setAuthError(err, 'Registration verification failed');
-        throw err;
-      }
+      setState((current) => ({ ...current, loading: false, error: null }));
     } catch (err) {
       setAuthError(err, 'Registration failed');
       throw err;

@@ -93,17 +93,10 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.userRepo.Create(r.Context(), req.Email, string(hash))
+	_, err = h.userRepo.Create(r.Context(), req.Email, string(hash))
 	if err != nil && err != repository.ErrDuplicate {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
-	}
-
-	if err == nil {
-		if err := h.setTokenCookie(w, user.ID.String(), user.TokenVersion); err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

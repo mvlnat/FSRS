@@ -3,13 +3,18 @@
   "packages": [
     "go@1.22",
     "nodejs@20",
-    "postgresql@16"
+    "postgresql@16",
+    "nginx",
+    "openssl"
   ],
   "shell": {
     "init_hook": [
       "echo 'Welcome to devbox!' > /dev/null"
     ],
     "scripts": {
+      "check:nginx": [
+        "bash scripts/check-nginx.sh"
+      ],
       "test": [
         "echo \"Error: no test specified\" && exit 1"
       ]

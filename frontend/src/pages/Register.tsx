@@ -28,12 +28,7 @@ export function Register() {
     }
 
     try {
-      const user = await register(email, password);
-      if (user) {
-        navigate('/');
-        return;
-      }
-
+      await register(email, password);
       navigate('/login', {
         state: {
           info: 'If the email is available, the account is ready to sign in.',

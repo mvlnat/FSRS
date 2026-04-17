@@ -17,7 +17,7 @@ services:
   backend:
     image: fsrs-backend:latest
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-fsrs}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-fsrs}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-fsrs}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-fsrs}?sslmode=${DATABASE_SSLMODE:-disable}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       SECURE_COOKIES: ${SECURE_COOKIES:-true}
       TRUST_PROXY_HEADERS: "true"

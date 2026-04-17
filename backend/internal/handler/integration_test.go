@@ -149,6 +149,60 @@ func setupTestRouter() *chi.Mux {
 	return r
 }
 
+func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+
+	return nil
+}
+
+func registerTestUser(t *testing.T, email, password string) {
+	t.Helper()
+
+	body := `{"email":"` + email + `","password":"` + password + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("register: got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+}
+
+func loginTestUser(t *testing.T, email, password string) *http.Cookie {
+	t.Helper()
+
+	body := `{"email":"` + email + `","password":"` + password + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	authCookie := findCookie(rec.Result().Cookies(), "token")
+	if authCookie == nil {
+		t.Fatal("expected auth cookie after login")
+	}
+
+	return authCookie
+}
+
+func registerAndLoginTestUser(t *testing.T, email, password string) *http.Cookie {
+	t.Helper()
+
+	registerTestUser(t, email, password)
+	return loginTestUser(t, email, password)
+}
+
 func TestIntegration_AuthFlow(t *testing.T) {
 	// Register
 	body := `{"email":"test@example.com","password":"password123"}`
@@ -162,18 +216,11 @@ func TestIntegration_AuthFlow(t *testing.T) {
 		t.Fatalf("register: got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
 	}
 
-	// Extract cookie
-	cookies := rec.Result().Cookies()
-	var authCookie *http.Cookie
-	for _, c := range cookies {
-		if c.Name == "token" {
-			authCookie = c
-			break
-		}
+	if findCookie(rec.Result().Cookies(), "token") != nil {
+		t.Fatal("did not expect auth cookie after register")
 	}
-	if authCookie == nil {
-		t.Fatal("expected auth cookie after register")
-	}
+
+	authCookie := loginTestUser(t, "test@example.com", "password123")
 
 	// Get current user
 	req = httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
@@ -196,18 +243,6 @@ func TestIntegration_AuthFlow(t *testing.T) {
 		t.Errorf("email = %s, want test@example.com", user.Email)
 	}
 
-	// Login
-	body = `{"email":"test@example.com","password":"password123"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec = httptest.NewRecorder()
-
-	testRouter.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("login: got status %d, want %d", rec.Code, http.StatusOK)
-	}
-
 	// Logout
 	req = httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	req.AddCookie(authCookie)
@@ -221,22 +256,11 @@ func TestIntegration_AuthFlow(t *testing.T) {
 }
 
 func TestIntegration_LogoutRevokesExistingToken(t *testing.T) {
-	body := `{"email":"revoke@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
+	authCookie := registerAndLoginTestUser(t, "revoke@example.com", "password123")
 
-	testRouter.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("register: got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
-	}
-
-	authCookie := rec.Result().Cookies()[0]
-
-	req = httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	req.AddCookie(authCookie)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 
 	testRouter.ServeHTTP(rec, req)
 
@@ -291,28 +315,14 @@ func TestIntegration_AuthEmailNormalization(t *testing.T) {
 }
 
 func TestIntegration_DeckCRUD(t *testing.T) {
-	// Register and get auth cookie
-	body := `{"email":"deck@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
-
-	cookies := rec.Result().Cookies()
-	var authCookie *http.Cookie
-	for _, c := range cookies {
-		if c.Name == "token" {
-			authCookie = c
-			break
-		}
-	}
+	authCookie := registerAndLoginTestUser(t, "deck@example.com", "password123")
 
 	// Create deck
-	body = `{"name":"Test Deck","description":"A test deck"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	body := `{"name":"Test Deck","description":"A test deck"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(authCookie)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	testRouter.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
@@ -387,28 +397,14 @@ func TestIntegration_DeckCRUD(t *testing.T) {
 }
 
 func TestIntegration_StudyFlow(t *testing.T) {
-	// Register
-	body := `{"email":"study@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
-
-	cookies := rec.Result().Cookies()
-	var authCookie *http.Cookie
-	for _, c := range cookies {
-		if c.Name == "token" {
-			authCookie = c
-			break
-		}
-	}
+	authCookie := registerAndLoginTestUser(t, "study@example.com", "password123")
 
 	// Create deck
-	body = `{"name":"Study Deck","description":""}`
-	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	body := `{"name":"Study Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(authCookie)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	testRouter.ServeHTTP(rec, req)
 
 	var deck struct {
@@ -479,28 +475,14 @@ func TestIntegration_StudyFlow(t *testing.T) {
 }
 
 func TestIntegration_EditCardResetsStudyProgress(t *testing.T) {
-	// Register
-	body := `{"email":"edit-card@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
-
-	cookies := rec.Result().Cookies()
-	var authCookie *http.Cookie
-	for _, c := range cookies {
-		if c.Name == "token" {
-			authCookie = c
-			break
-		}
-	}
+	authCookie := registerAndLoginTestUser(t, "edit-card@example.com", "password123")
 
 	// Create deck
-	body = `{"name":"Editable Deck","description":""}`
-	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	body := `{"name":"Editable Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(authCookie)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	testRouter.ServeHTTP(rec, req)
 
 	var deck struct {
@@ -583,19 +565,13 @@ func TestIntegration_EditCardResetsStudyProgress(t *testing.T) {
 }
 
 func TestIntegration_ReviewRejectsCardThatIsNotDue(t *testing.T) {
-	body := `{"email":"repeat-review@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
+	authCookie := registerAndLoginTestUser(t, "repeat-review@example.com", "password123")
 
-	authCookie := rec.Result().Cookies()[0]
-
-	body = `{"name":"Review Guard Deck","description":""}`
-	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	body := `{"name":"Review Guard Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(authCookie)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	testRouter.ServeHTTP(rec, req)
 
 	var deck struct {
@@ -638,19 +614,13 @@ func TestIntegration_ReviewRejectsCardThatIsNotDue(t *testing.T) {
 }
 
 func TestIntegration_SetCardTagsRejectsTagsFromAnotherDeck(t *testing.T) {
-	body := `{"email":"tag-scope@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
+	authCookie := registerAndLoginTestUser(t, "tag-scope@example.com", "password123")
 
-	authCookie := rec.Result().Cookies()[0]
-
-	body = `{"name":"Deck One","description":""}`
-	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	body := `{"name":"Deck One","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(authCookie)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	testRouter.ServeHTTP(rec, req)
 
 	var deckOne struct {
@@ -707,19 +677,13 @@ func TestIntegration_SetCardTagsRejectsTagsFromAnotherDeck(t *testing.T) {
 }
 
 func TestIntegration_UpdateCardRejectsBlankContent(t *testing.T) {
-	body := `{"email":"blank-card@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
+	authCookie := registerAndLoginTestUser(t, "blank-card@example.com", "password123")
 
-	authCookie := rec.Result().Cookies()[0]
-
-	body = `{"name":"Validation Deck","description":""}`
-	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	body := `{"name":"Validation Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(authCookie)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	testRouter.ServeHTTP(rec, req)
 
 	var deck struct {
@@ -752,19 +716,13 @@ func TestIntegration_UpdateCardRejectsBlankContent(t *testing.T) {
 }
 
 func TestIntegration_DeckValidationRejectsBlankTrimmedNames(t *testing.T) {
-	body := `{"email":"blank-deck@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
+	authCookie := registerAndLoginTestUser(t, "blank-deck@example.com", "password123")
 
-	authCookie := rec.Result().Cookies()[0]
-
-	body = `{"name":"   ","description":"ignored"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	body := `{"name":"   ","description":"ignored"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(authCookie)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	testRouter.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -798,19 +756,13 @@ func TestIntegration_DeckValidationRejectsBlankTrimmedNames(t *testing.T) {
 }
 
 func TestIntegration_TagValidationAndDuplicates(t *testing.T) {
-	body := `{"email":"blank-tag@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
+	authCookie := registerAndLoginTestUser(t, "blank-tag@example.com", "password123")
 
-	authCookie := rec.Result().Cookies()[0]
-
-	body = `{"name":"Tag Deck","description":""}`
-	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	body := `{"name":"Tag Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(authCookie)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	testRouter.ServeHTTP(rec, req)
 
 	var deck struct {
@@ -854,19 +806,13 @@ func TestIntegration_TagValidationAndDuplicates(t *testing.T) {
 }
 
 func TestIntegration_StudyStatsUseRollingWindows(t *testing.T) {
-	body := `{"email":"rolling-stats@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
+	authCookie := registerAndLoginTestUser(t, "rolling-stats@example.com", "password123")
 
-	authCookie := rec.Result().Cookies()[0]
-
-	body = `{"name":"Stats Deck","description":""}`
-	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	body := `{"name":"Stats Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(authCookie)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	testRouter.ServeHTTP(rec, req)
 
 	var deck struct {
@@ -925,27 +871,15 @@ func TestIntegration_StudyStatsUseRollingWindows(t *testing.T) {
 }
 
 func TestIntegration_Authorization(t *testing.T) {
-	// Register two users
-	body1 := `{"email":"user1@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body1)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
-	cookie1 := rec.Result().Cookies()[0]
-
-	body2 := `{"email":"user2@example.com","password":"password123"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body2)))
-	req.Header.Set("Content-Type", "application/json")
-	rec = httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
-	cookie2 := rec.Result().Cookies()[0]
+	cookie1 := registerAndLoginTestUser(t, "user1@example.com", "password123")
+	cookie2 := registerAndLoginTestUser(t, "user2@example.com", "password123")
 
 	// User 1 creates a deck
 	body := `{"name":"User1 Deck","description":""}`
-	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(cookie1)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	testRouter.ServeHTTP(rec, req)
 
 	var deck struct {

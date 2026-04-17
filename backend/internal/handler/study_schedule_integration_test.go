@@ -13,19 +13,13 @@ import (
 )
 
 func TestIntegration_ScheduleFallsBackToUTCAndIncludesNewCards(t *testing.T) {
-	body := `{"email":"schedule@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	testRouter.ServeHTTP(rec, req)
+	authCookie := registerAndLoginTestUser(t, "schedule@example.com", "password123")
 
-	authCookie := rec.Result().Cookies()[0]
-
-	body = `{"name":"Schedule Deck","description":""}`
-	req = httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	body := `{"name":"Schedule Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(authCookie)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	testRouter.ServeHTTP(rec, req)
 
 	var deck struct {
