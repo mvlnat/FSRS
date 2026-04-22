@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import type { Components } from 'react-markdown';
-import type { CardState, CardWithState, Rating } from '../types';
+import type { CardState, CardWithState, StudySession, Rating } from '../types';
 import { RATING_LABELS } from '../types';
 import * as api from '../api/client';
 import { normalizeOptionalExternalLink } from '../utils/links';
@@ -336,8 +336,64 @@ function shouldRequeueLearningCard(state: CardState): boolean {
   return state.scheduled_days === 0 && (state.state === 1 || state.state === 3);
 }
 
+function toPendingReviews(cards: CardWithState[]): PendingReview[] {
+  return cards
+    .flatMap((card) => {
+      if (!card.state) {
+        return [];
+      }
+
+      return [{
+        card,
+        dueAt: new Date(card.state.due).getTime(),
+      }];
+    })
+    .sort((a, b) => a.dueAt - b.dueAt);
+}
+
 function enqueuePendingReview(queue: PendingReview[], entry: PendingReview): PendingReview[] {
   return [...queue, entry].sort((a, b) => a.dueAt - b.dueAt);
+}
+
+function mergeCards(currentCards: CardWithState[], incomingCards: CardWithState[]): CardWithState[] {
+  if (incomingCards.length === 0) {
+    return currentCards;
+  }
+
+  const seenIds = new Set(currentCards.map((card) => card.id));
+  const mergedCards = [...currentCards];
+
+  for (const incomingCard of incomingCards) {
+    if (seenIds.has(incomingCard.id)) {
+      continue;
+    }
+
+    seenIds.add(incomingCard.id);
+    mergedCards.push(incomingCard);
+  }
+
+  return mergedCards;
+}
+
+function prependUniqueCard(currentCards: CardWithState[], card: CardWithState): CardWithState[] {
+  if (currentCards.some((candidate) => candidate.id === card.id)) {
+    return currentCards;
+  }
+
+  return [card, ...currentCards];
+}
+
+function mergePendingReviews(currentQueue: PendingReview[], incomingQueue: PendingReview[]): PendingReview[] {
+  if (incomingQueue.length === 0) {
+    return currentQueue;
+  }
+
+  const queueByCardID = new Map(currentQueue.map((entry) => [entry.card.id, entry]));
+  for (const entry of incomingQueue) {
+    queueByCardID.set(entry.card.id, entry);
+  }
+
+  return [...queueByCardID.values()].sort((a, b) => a.dueAt - b.dueAt);
 }
 
 function formatCountdown(ms: number): string {
@@ -363,20 +419,45 @@ export function Study() {
   const [completed, setCompleted] = useState(0);
   const [totalInSession, setTotalInSession] = useState(0);
   const [now, setNow] = useState(Date.now());
-  const [submitting, setSubmitting] = useState(false);
+  const [pendingSubmissionCount, setPendingSubmissionCount] = useState(0);
+  const [refreshingSession, setRefreshingSession] = useState(false);
   const cardsRef = useRef<CardWithState[]>([]);
+  const pendingReviewsRef = useRef<PendingReview[]>([]);
+  const pendingSubmissionCountRef = useRef(0);
+  const pendingSubmissionCardIDsRef = useRef(new Set<string>());
+  const backgroundRefreshInFlightRef = useRef(false);
 
-  const loadCards = useCallback(async (isInitial = false) => {
+  const loadStudySession = useCallback(async (isInitial = false) => {
     if (!deckId) return;
     try {
-      const data = await api.getDueCards(deckId);
-      setCards(data);
+      const session: StudySession = await api.getStudySession(deckId);
+      const sessionPendingReviews = toPendingReviews(session.pending_learning_cards);
+      const dueCardIDs = new Set(session.due_cards.map((card) => card.id));
+
+      if (isInitial) {
+        cardsRef.current = session.due_cards;
+        pendingReviewsRef.current = sessionPendingReviews;
+        setCards(session.due_cards);
+        setPendingReviews(sessionPendingReviews);
+      } else {
+        setCards((currentCards) => {
+          const nextCards = mergeCards(currentCards, session.due_cards);
+          cardsRef.current = nextCards;
+          return nextCards;
+        });
+        setPendingReviews((queue) => {
+          const queueWithoutDueCards = queue.filter((entry) => !dueCardIDs.has(entry.card.id));
+          const nextQueue = mergePendingReviews(queueWithoutDueCards, sessionPendingReviews);
+          pendingReviewsRef.current = nextQueue;
+          return nextQueue;
+        });
+      }
+
       setShowBack(false);
       setError('');
       if (isInitial) {
-        setTotalInSession(data.length);
+        setTotalInSession(session.due_cards.length + sessionPendingReviews.length);
         setCompleted(0);
-        setPendingReviews([]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load cards');
@@ -385,13 +466,33 @@ export function Study() {
     }
   }, [deckId]);
 
+  const maybeRefreshEmptySession = useCallback(() => {
+    if (backgroundRefreshInFlightRef.current || pendingSubmissionCountRef.current > 0) {
+      return;
+    }
+    if (cardsRef.current.length > 0 || pendingReviewsRef.current.length > 0) {
+      return;
+    }
+
+    backgroundRefreshInFlightRef.current = true;
+    setRefreshingSession(true);
+    void loadStudySession(false).finally(() => {
+      backgroundRefreshInFlightRef.current = false;
+      setRefreshingSession(false);
+    });
+  }, [loadStudySession]);
+
   useEffect(() => {
-    if (deckId) loadCards(true);
-  }, [deckId, loadCards]);
+    if (deckId) loadStudySession(true);
+  }, [deckId, loadStudySession]);
 
   useEffect(() => {
     cardsRef.current = cards;
   }, [cards]);
+
+  useEffect(() => {
+    pendingReviewsRef.current = pendingReviews;
+  }, [pendingReviews]);
 
   useEffect(() => {
     if (pendingReviews.length === 0) return;
@@ -400,83 +501,87 @@ export function Study() {
       const currentTime = Date.now();
       setNow(currentTime);
 
-      setPendingReviews((queue) => {
-        const dueNow = queue.filter((entry) => entry.dueAt <= currentTime);
-        if (dueNow.length === 0) {
-          return queue;
-        }
+        setPendingReviews((queue) => {
+          const dueNow = queue.filter((entry) => entry.dueAt <= currentTime);
+          if (dueNow.length === 0) {
+            return queue;
+          }
 
-        setCards((currentCards) => {
-          const existingIds = new Set(currentCards.map((card) => card.id));
-          const newlyDueCards = dueNow
-            .map((entry) => entry.card)
-            .filter((card) => !existingIds.has(card.id));
+          setCards((currentCards) => {
+            const existingIds = new Set(currentCards.map((card) => card.id));
+            const newlyDueCards = dueNow
+              .map((entry) => entry.card)
+              .filter((card) => !existingIds.has(card.id));
+            const nextCards = newlyDueCards.length > 0 ? [...currentCards, ...newlyDueCards] : currentCards;
+            cardsRef.current = nextCards;
+            return nextCards;
+          });
 
-          return newlyDueCards.length > 0 ? [...currentCards, ...newlyDueCards] : currentCards;
+          const nextQueue = queue.filter((entry) => entry.dueAt > currentTime);
+          pendingReviewsRef.current = nextQueue;
+          return nextQueue;
         });
-
-        return queue.filter((entry) => entry.dueAt > currentTime);
-      });
-    }, 1000);
+      }, 1000);
 
     return () => window.clearInterval(intervalId);
   }, [pendingReviews.length]);
 
-  const handleRating = useCallback(async (rating: Rating) => {
-    const [card, ...remainingCards] = cards;
-    if (!card || submitting) return;
+  const handleRating = useCallback((rating: Rating) => {
+    const [card] = cards;
+    if (!card || pendingSubmissionCardIDsRef.current.has(card.id)) return;
 
-    try {
-      setSubmitting(true);
-      const nextState = await api.reviewCard(card.id, rating);
-      setCompleted(c => c + 1);
-      setCards((currentCards) => currentCards.filter((candidate) => candidate.id !== card.id));
-      setShowBack(false);
-      setError('');
+    pendingSubmissionCardIDsRef.current.add(card.id);
+    pendingSubmissionCountRef.current += 1;
+    setPendingSubmissionCount(pendingSubmissionCountRef.current);
+    setCompleted((count) => count + 1);
+    setCards((currentCards) => {
+      const nextCards = currentCards.filter((candidate) => candidate.id !== card.id);
+      cardsRef.current = nextCards;
+      return nextCards;
+    });
+    setShowBack(false);
+    setError('');
 
-      if (shouldRequeueLearningCard(nextState)) {
-        setPendingReviews((queue) => enqueuePendingReview(queue, {
-          card: { ...card, state: nextState },
-          dueAt: new Date(nextState.due).getTime(),
-        }));
-        setTotalInSession((count) => count + 1);
-      }
+    void (async () => {
+      let shouldTriggerSessionRefresh = false;
 
-      if (remainingCards.length === 0) {
-        const freshDueCards = await api.getDueCards(deckId!);
-        const existingCardIds = new Set(
-          cardsRef.current
-            .filter((candidate) => candidate.id !== card.id)
-            .map((candidate) => candidate.id),
-        );
-        const addedCount = freshDueCards.filter((candidate) => !existingCardIds.has(candidate.id)).length;
+      try {
+        const nextState = await api.reviewCard(card.id, rating);
+        const requeueCurrentCard = shouldRequeueLearningCard(nextState);
 
+        if (requeueCurrentCard) {
+          setPendingReviews((queue) => {
+            const nextQueue = enqueuePendingReview(queue, {
+              card: { ...card, state: nextState },
+              dueAt: new Date(nextState.due).getTime(),
+            });
+            pendingReviewsRef.current = nextQueue;
+            return nextQueue;
+          });
+          setTotalInSession((count) => count + 1);
+        } else {
+          shouldTriggerSessionRefresh = true;
+        }
+      } catch (err) {
+        setCompleted((count) => Math.max(0, count - 1));
+        setError(err instanceof Error ? err.message : 'Failed to submit review');
+        shouldTriggerSessionRefresh = true;
         setCards((currentCards) => {
-          const seenIds = new Set(currentCards.map((candidate) => candidate.id));
-          const mergedCards = [...currentCards];
-
-          for (const freshDueCard of freshDueCards) {
-            if (seenIds.has(freshDueCard.id)) {
-              continue;
-            }
-
-            seenIds.add(freshDueCard.id);
-            mergedCards.push(freshDueCard);
-          }
-
-          return mergedCards;
+          const nextCards = prependUniqueCard(currentCards, card);
+          cardsRef.current = nextCards;
+          return nextCards;
         });
+      } finally {
+        pendingSubmissionCardIDsRef.current.delete(card.id);
+        pendingSubmissionCountRef.current = Math.max(0, pendingSubmissionCountRef.current - 1);
+        setPendingSubmissionCount(pendingSubmissionCountRef.current);
 
-        if (addedCount > 0) {
-          setTotalInSession((count) => count + addedCount);
+        if (shouldTriggerSessionRefresh) {
+          maybeRefreshEmptySession();
         }
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit review');
-    } finally {
-      setSubmitting(false);
-    }
-  }, [cards, deckId, submitting]);
+    })();
+  }, [cards, maybeRefreshEmptySession]);
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -486,7 +591,7 @@ export function Study() {
     }
 
     const currentCard = cards[0];
-    if (!currentCard || loading || submitting) return;
+    if (!currentCard || loading) return;
 
     if (e.code === 'Space') {
       e.preventDefault();
@@ -497,7 +602,7 @@ export function Study() {
       e.preventDefault();
       handleRating(parseInt(e.key) as Rating);
     }
-  }, [cards, showBack, loading, submitting, handleRating]);
+  }, [cards, showBack, loading, handleRating]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -509,8 +614,9 @@ export function Study() {
   const currentCard = cards[0];
   const nextPendingReview = pendingReviews[0];
   const isWaiting = !currentCard && pendingReviews.length > 0;
+  const isSyncing = !currentCard && pendingReviews.length === 0 && (pendingSubmissionCount > 0 || refreshingSession);
   const isErrorState = !currentCard && pendingReviews.length === 0 && error !== '';
-  const isComplete = !currentCard && pendingReviews.length === 0 && error === '';
+  const isComplete = !currentCard && pendingReviews.length === 0 && pendingSubmissionCount === 0 && !refreshingSession && error === '';
   const nextReviewCountdown = nextPendingReview ? formatCountdown(nextPendingReview.dueAt - now) : null;
   const safeCurrentCardLink = currentCard ? normalizeOptionalExternalLink(currentCard.link) : null;
 
@@ -535,6 +641,7 @@ export function Study() {
         <span>Completed: {completed}/{totalInSession}</span>
         <span>Due Now: {cards.length}</span>
         <span>Learning Queue: {pendingReviews.length}</span>
+        <span>Saving: {pendingSubmissionCount}</span>
       </div>
 
       {isWaiting ? (
@@ -544,11 +651,16 @@ export function Study() {
             This card is in a short learning step and will return in {nextReviewCountdown}.
           </p>
         </div>
+      ) : isSyncing ? (
+        <div className="study-waiting">
+          <h2>Saving Answers</h2>
+          <p>Your ratings are being written in the background.</p>
+        </div>
       ) : isErrorState ? (
         <div className="study-complete">
           <h2>Unable to Load Session</h2>
           <p>{error}</p>
-          <button onClick={() => void loadCards(true)}>Retry</button>
+          <button onClick={() => void loadStudySession(true)}>Retry</button>
         </div>
       ) : isComplete ? (
         <div className="study-complete">
@@ -596,9 +708,8 @@ export function Study() {
                     key={rating}
                     onClick={() => handleRating(rating)}
                     className={`rating-btn rating-${rating}`}
-                    disabled={submitting}
                   >
-                    <span className="shortcut-hint">{rating}</span> {submitting ? 'Submitting...' : RATING_LABELS[rating]}
+                    <span className="shortcut-hint">{rating}</span> {RATING_LABELS[rating]}
                   </button>
                 ))}
               </div>

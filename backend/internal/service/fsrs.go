@@ -9,17 +9,22 @@ import (
 )
 
 type FSRSService struct {
-	fsrs *fsrs.FSRS
+	params fsrs.Parameters
 }
 
 func NewFSRSService() *FSRSService {
-	params := fsrs.DefaultParam()
-	return &FSRSService{
-		fsrs: fsrs.NewFSRS(params),
-	}
+	return &FSRSService{params: fsrs.DefaultParam()}
 }
 
 func (s *FSRSService) Review(cardState *model.CardState, rating int) *model.CardState {
+	return s.review(cardState, rating, false)
+}
+
+func (s *FSRSService) ReviewWithFuzz(cardState *model.CardState, rating int, enableFuzz bool) *model.CardState {
+	return s.review(cardState, rating, enableFuzz)
+}
+
+func (s *FSRSService) review(cardState *model.CardState, rating int, enableFuzz bool) *model.CardState {
 	now := time.Now()
 	lastReview := time.Time{}
 	if cardState.LastReview != nil {
@@ -43,7 +48,9 @@ func (s *FSRSService) Review(cardState *model.CardState, rating int) *model.Card
 	fsrsRating := fsrs.Rating(rating)
 
 	// Schedule the card
-	schedulingInfo := s.fsrs.Repeat(card, now)
+	params := s.params
+	params.EnableFuzz = enableFuzz
+	schedulingInfo := fsrs.NewFSRS(params).Repeat(card, now)
 	newCard := schedulingInfo[fsrsRating].Card
 	var reviewedAt *time.Time
 	if !newCard.LastReview.IsZero() {

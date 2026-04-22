@@ -31,6 +31,14 @@ type reviewRequest struct {
 const dueCalendarDateLayout = "2006-01-02"
 
 func (h *StudyHandler) GetDueCards(w http.ResponseWriter, r *http.Request) {
+	h.respondWithDueCards(w, r, false)
+}
+
+func (h *StudyHandler) GetSession(w http.ResponseWriter, r *http.Request) {
+	h.respondWithDueCards(w, r, true)
+}
+
+func (h *StudyHandler) respondWithDueCards(w http.ResponseWriter, r *http.Request, includePendingLearning bool) {
 	userID, ok := requireUserID(w, r)
 	if !ok {
 		return
@@ -55,7 +63,25 @@ func (h *StudyHandler) GetDueCards(w http.ResponseWriter, r *http.Request) {
 		cards = []model.CardWithState{}
 	}
 
-	writeJSON(w, http.StatusOK, cards)
+	if !includePendingLearning {
+		writeJSON(w, http.StatusOK, cards)
+		return
+	}
+
+	pendingLearningCards, err := h.cardRepo.GetPendingLearningCards(r.Context(), deckID, 50)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if pendingLearningCards == nil {
+		pendingLearningCards = []model.CardWithState{}
+	}
+
+	writeJSON(w, http.StatusOK, model.StudySession{
+		DueCards:             cards,
+		PendingLearningCards: pendingLearningCards,
+	})
 }
 
 func (h *StudyHandler) Review(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +105,13 @@ func (h *StudyHandler) Review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, ok := requireOwnedCard(w, r, h.cardRepo, cardID, userID); !ok {
+	card, ok := requireOwnedCard(w, r, h.cardRepo, cardID, userID)
+	if !ok {
+		return
+	}
+
+	deck, ok := requireOwnedDeck(w, r, h.deckRepo, card.DeckID, userID)
+	if !ok {
 		return
 	}
 
@@ -87,7 +119,7 @@ func (h *StudyHandler) Review(w http.ResponseWriter, r *http.Request) {
 		if currentState == nil {
 			currentState = h.fsrsService.NewCardState(cardID)
 		}
-		return h.fsrsService.Review(currentState, req.Rating)
+		return h.fsrsService.ReviewWithFuzz(currentState, req.Rating, deck.FuzzEnabled)
 	})
 	if err == repository.ErrCardNotDue {
 		http.Error(w, "Card is not due yet", http.StatusConflict)

@@ -71,6 +71,7 @@ describe('App end-to-end flows', () => {
       user_id: currentUser.id,
       name: 'Biology',
       description: 'Cells and memory',
+      fuzz_enabled: false,
       created_at: '2026-04-16T00:00:00Z',
     };
     const dueCard: CardWithState = {
@@ -108,5 +109,18 @@ describe('App end-to-end flows', () => {
 
     await screen.findByRole('heading', { name: 'Session Complete!' });
     expect(screen.getByText("You've reviewed all due cards.")).toBeInTheDocument();
+  });
+
+  it('renders the about page without requiring authentication', async () => {
+    const server = createMockApiServer();
+    restoreServer = server.restore;
+
+    window.history.replaceState({}, '', '/about');
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'How Study Works' });
+    expect(screen.getByText(/comes back in about 1 minute/i)).toBeInTheDocument();
+    expect(screen.getByText(/short-term learning steps are enabled/i)).toBeInTheDocument();
   });
 });

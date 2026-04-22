@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider } from './hooks/AuthProvider';
 import { useAuth } from './hooks/useAuth';
 import { Login } from './pages/Login';
@@ -6,6 +6,7 @@ import { Register } from './pages/Register';
 import { Decks } from './pages/Decks';
 import { DeckEdit } from './pages/DeckEdit';
 import { Study } from './pages/Study';
+import { About } from './pages/About';
 import './App.css';
 
 function AuthRoute({
@@ -34,7 +35,12 @@ function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="app">
       <header className="header">
-        <h1>FSRS</h1>
+        <div className="header-brand">
+          <Link to="/" className="header-title">FSRS</Link>
+          <nav className="header-nav" aria-label="Primary">
+            <Link to="/about" className="header-link">About</Link>
+          </nav>
+        </div>
         {user && (
           <div className="user-info">
             <span>{user.email}</span>
@@ -53,6 +59,7 @@ function App() {
       <BrowserRouter>
         <Layout>
           <Routes>
+            <Route path="/about" element={<About />} />
             <Route
               path="/login"
               element={

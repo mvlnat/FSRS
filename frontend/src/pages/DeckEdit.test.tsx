@@ -26,6 +26,7 @@ const baseDeck: Deck = {
   user_id: 'user-1',
   name: 'Biology',
   description: 'Cells',
+  fuzz_enabled: false,
   created_at: '2026-04-14T00:00:00Z',
 };
 
@@ -80,7 +81,7 @@ describe('DeckEdit', () => {
   });
 
   it('reloads the deck after saving deck settings', async () => {
-    const updatedDeck: Deck = { ...baseDeck, name: 'Biology Updated', description: 'Updated cells' };
+    const updatedDeck: Deck = { ...baseDeck, name: 'Biology Updated', description: 'Updated cells', fuzz_enabled: true };
     const user = userEvent.setup();
 
     mockedApi.getDeck.mockResolvedValueOnce(baseDeck).mockResolvedValueOnce(updatedDeck);
@@ -100,11 +101,12 @@ describe('DeckEdit', () => {
     const descriptionInput = screen.getByLabelText('Description');
     await user.clear(descriptionInput);
     await user.type(descriptionInput, 'Updated cells');
+    await user.click(screen.getByLabelText(/Enable Fuzz For Long-Term Reviews/));
 
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     await waitFor(() => {
-      expect(mockedApi.updateDeck).toHaveBeenCalledWith('deck-1', 'Biology Updated', 'Updated cells');
+      expect(mockedApi.updateDeck).toHaveBeenCalledWith('deck-1', 'Biology Updated', 'Updated cells', true);
     });
     await waitFor(() => {
       expect(mockedApi.getDeck).toHaveBeenCalledTimes(2);

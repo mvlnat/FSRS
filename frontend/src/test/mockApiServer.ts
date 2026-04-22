@@ -1,5 +1,5 @@
 import type { StudyStats } from '../api/client';
-import type { CardState, CardWithState, Deck, DeckWithStats, DueCalendarDay, Tag, User } from '../types';
+import type { CardState, CardWithState, Deck, DeckWithStats, DueCalendarDay, StudySession, Tag, User } from '../types';
 
 type MockUserRecord = {
   password: string;
@@ -113,9 +113,31 @@ function parseStudyDeckID(pathname: string): string | null {
   return match?.[1] ?? null;
 }
 
+function parseStudySessionDeckID(pathname: string): string | null {
+  const match = pathname.match(/^\/api\/study\/([^/]+)\/session$/);
+  return match?.[1] ?? null;
+}
+
 function parseReviewCardID(pathname: string): string | null {
   const match = pathname.match(/^\/api\/study\/([^/]+)\/review$/);
   return match?.[1] ?? null;
+}
+
+function isDueForStudy(card: CardWithState): boolean {
+  if (!card.state) {
+    return true;
+  }
+
+  return new Date(card.state.due).getTime() <= Date.now();
+}
+
+function isPendingLearningCard(card: CardWithState): boolean {
+  if (!card.state) {
+    return false;
+  }
+
+  const isLearningState = card.state.state === 1 || card.state.state === 3;
+  return isLearningState && card.state.scheduled_days === 0 && new Date(card.state.due).getTime() > Date.now();
 }
 
 function findCard(state: MockState, cardID: string): CardWithState | undefined {
@@ -244,6 +266,7 @@ export function createMockApiServer(options: MockApiServerOptions = {}) {
         user_id: state.currentUser!.id,
         name: String(body.name ?? ''),
         description: String(body.description ?? ''),
+        fuzz_enabled: Boolean(body.fuzz_enabled ?? false),
         created_at: new Date().toISOString(),
       };
 
@@ -313,17 +336,20 @@ export function createMockApiServer(options: MockApiServerOptions = {}) {
       return createJSONResponse(tag, 201);
     }
 
+    const studySessionDeckID = parseStudySessionDeckID(pathname);
+    if (studySessionDeckID && method === 'GET') {
+      const cards = state.cardsByDeck.get(studySessionDeckID) ?? [];
+      const session: StudySession = {
+        due_cards: cards.filter(isDueForStudy),
+        pending_learning_cards: cards.filter(isPendingLearningCard),
+      };
+
+      return createJSONResponse(session);
+    }
+
     const studyDeckID = parseStudyDeckID(pathname);
     if (studyDeckID && method === 'GET') {
-      const cards = (state.cardsByDeck.get(studyDeckID) ?? []).filter((card) => {
-        if (!card.state) {
-          return true;
-        }
-
-        return new Date(card.state.due).getTime() <= Date.now();
-      });
-
-      return createJSONResponse(cards);
+      return createJSONResponse((state.cardsByDeck.get(studyDeckID) ?? []).filter(isDueForStudy));
     }
 
     const reviewCardID = parseReviewCardID(pathname);

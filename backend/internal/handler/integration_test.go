@@ -158,6 +158,7 @@ func setupTestRouter() *chi.Mux {
 
 		r.Get("/api/study/stats", studyHandler.GetStats)
 		r.Get("/api/study/schedule", studyHandler.GetSchedule)
+		r.Get("/api/study/{deckId}/session", studyHandler.GetSession)
 		r.Get("/api/study/{deckId}", studyHandler.GetDueCards)
 		r.Post("/api/study/{cardId}/review", studyHandler.Review)
 	})
@@ -487,6 +488,73 @@ func TestIntegration_StudyFlow(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&stats)
 	if stats.TotalReviews != 1 {
 		t.Errorf("expected 1 total review, got %d", stats.TotalReviews)
+	}
+}
+
+func TestIntegration_StudySessionIncludesPendingLearningCards(t *testing.T) {
+	authCookie := registerAndLoginTestUser(t, "study-session@example.com", "password123")
+
+	body := `{"name":"Study Session Deck","description":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec := httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var deck struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&deck)
+
+	body = `{"front":"Pending question","back":"Pending answer"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	var card struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(rec.Body).Decode(&card)
+
+	body = `{"rating":2}`
+	req = httptest.NewRequest(http.MethodPost, "/api/study/"+card.ID+"/review", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("review card: got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/study/"+deck.ID+"/session", nil)
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get study session: got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var session struct {
+		DueCards []struct {
+			ID string `json:"id"`
+		} `json:"due_cards"`
+		PendingLearningCards []struct {
+			ID string `json:"id"`
+		} `json:"pending_learning_cards"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&session); err != nil {
+		t.Fatalf("decode study session: %v", err)
+	}
+
+	if len(session.DueCards) != 0 {
+		t.Fatalf("expected no due cards immediately after scheduling a short learning step, got %d", len(session.DueCards))
+	}
+	if len(session.PendingLearningCards) != 1 || session.PendingLearningCards[0].ID != card.ID {
+		t.Fatalf("expected pending learning card to be returned, got %#v", session.PendingLearningCards)
 	}
 }
 

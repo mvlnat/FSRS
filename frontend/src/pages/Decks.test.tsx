@@ -30,6 +30,7 @@ const createdDeck: Deck = {
   user_id: 'user-1',
   name: 'Biology',
   description: 'Cells',
+  fuzz_enabled: false,
   created_at: '2026-04-14T00:00:00Z',
 };
 
@@ -127,6 +128,7 @@ describe('Decks', () => {
       user_id: 'user-1',
       name: 'Imported Deck',
       description: 'Imported cards',
+      fuzz_enabled: false,
       created_at: '2026-04-14T00:05:00Z',
       stats: {
         total: 1,

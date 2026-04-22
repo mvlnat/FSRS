@@ -8,6 +8,7 @@ export interface Deck {
   user_id: string;
   name: string;
   description: string;
+  fuzz_enabled: boolean;
   created_at: string;
 }
 
@@ -43,6 +44,11 @@ export interface CardState {
   lapses: number;
   state: number; // 0=New, 1=Learning, 2=Review, 3=Relearning
   last_review: string | null;
+}
+
+export interface StudySession {
+  due_cards: CardWithState[];
+  pending_learning_cards: CardWithState[];
 }
 
 export interface CardWithState extends Card {

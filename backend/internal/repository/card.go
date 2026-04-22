@@ -87,41 +87,7 @@ func (r *CardRepository) ListByDeck(ctx context.Context, deckID uuid.UUID) ([]mo
 	}
 	defer rows.Close()
 
-	var cards []model.CardWithState
-	for rows.Next() {
-		var c model.CardWithState
-		var stateID, stateCardID *uuid.UUID
-		var due *time.Time
-		var stability, difficulty *float64
-		var elapsedDays, scheduledDays, reps, lapses, state *int
-		var lastReview *time.Time
-
-		if err := rows.Scan(
-			&c.ID, &c.DeckID, &c.Front, &c.Back, &c.Link, &c.CreatedAt,
-			&stateID, &stateCardID, &due, &stability, &difficulty,
-			&elapsedDays, &scheduledDays, &reps, &lapses, &state, &lastReview,
-		); err != nil {
-			return nil, err
-		}
-
-		if stateID != nil {
-			c.State = &model.CardState{
-				ID:            *stateID,
-				CardID:        *stateCardID,
-				Due:           *due,
-				Stability:     *stability,
-				Difficulty:    *difficulty,
-				ElapsedDays:   *elapsedDays,
-				ScheduledDays: *scheduledDays,
-				Reps:          *reps,
-				Lapses:        *lapses,
-				State:         *state,
-				LastReview:    lastReview,
-			}
-		}
-		cards = append(cards, c)
-	}
-	return cards, rows.Err()
+	return scanCardsWithState(rows)
 }
 
 func (r *CardRepository) Update(ctx context.Context, id uuid.UUID, front, back, link string) (*model.Card, error) {
@@ -227,41 +193,31 @@ func (r *CardRepository) GetDueCards(ctx context.Context, deckID uuid.UUID, limi
 	}
 	defer rows.Close()
 
-	var cards []model.CardWithState
-	for rows.Next() {
-		var c model.CardWithState
-		var stateID, stateCardID *uuid.UUID
-		var due *time.Time
-		var stability, difficulty *float64
-		var elapsedDays, scheduledDays, reps, lapses, state *int
-		var lastReview *time.Time
+	return scanCardsWithState(rows)
+}
 
-		if err := rows.Scan(
-			&c.ID, &c.DeckID, &c.Front, &c.Back, &c.Link, &c.CreatedAt,
-			&stateID, &stateCardID, &due, &stability, &difficulty,
-			&elapsedDays, &scheduledDays, &reps, &lapses, &state, &lastReview,
-		); err != nil {
-			return nil, err
-		}
+func (r *CardRepository) GetPendingLearningCards(ctx context.Context, deckID uuid.UUID, limit int) ([]model.CardWithState, error) {
+	now := time.Now()
 
-		if stateID != nil {
-			c.State = &model.CardState{
-				ID:            *stateID,
-				CardID:        *stateCardID,
-				Due:           *due,
-				Stability:     *stability,
-				Difficulty:    *difficulty,
-				ElapsedDays:   *elapsedDays,
-				ScheduledDays: *scheduledDays,
-				Reps:          *reps,
-				Lapses:        *lapses,
-				State:         *state,
-				LastReview:    lastReview,
-			}
-		}
-		cards = append(cards, c)
+	rows, err := r.db.Pool.Query(ctx, `
+		SELECT c.id, c.deck_id, c.front, c.back, c.link, c.created_at,
+			   cs.id, cs.card_id, cs.due, cs.stability, cs.difficulty,
+			   cs.elapsed_days, cs.scheduled_days, cs.reps, cs.lapses, cs.state, cs.last_review
+		FROM cards c
+		JOIN card_states cs ON c.id = cs.card_id
+		WHERE c.deck_id = $1
+			AND cs.state IN (1, 3)
+			AND cs.scheduled_days = 0
+			AND cs.due > $2
+		ORDER BY cs.due ASC
+		LIMIT $3
+	`, deckID, now, limit)
+	if err != nil {
+		return nil, err
 	}
-	return cards, rows.Err()
+	defer rows.Close()
+
+	return scanCardsWithState(rows)
 }
 
 func (r *CardRepository) GetStateByCardID(ctx context.Context, cardID uuid.UUID) (*model.CardState, error) {
@@ -544,4 +500,42 @@ func scanCardState(scanner rowScanner) (*model.CardState, error) {
 
 	state.LastReview = lastReview
 	return state, nil
+}
+
+func scanCardsWithState(rows pgx.Rows) ([]model.CardWithState, error) {
+	var cards []model.CardWithState
+	for rows.Next() {
+		var c model.CardWithState
+		var stateID, stateCardID *uuid.UUID
+		var due *time.Time
+		var stability, difficulty *float64
+		var elapsedDays, scheduledDays, reps, lapses, state *int
+		var lastReview *time.Time
+
+		if err := rows.Scan(
+			&c.ID, &c.DeckID, &c.Front, &c.Back, &c.Link, &c.CreatedAt,
+			&stateID, &stateCardID, &due, &stability, &difficulty,
+			&elapsedDays, &scheduledDays, &reps, &lapses, &state, &lastReview,
+		); err != nil {
+			return nil, err
+		}
+
+		if stateID != nil {
+			c.State = &model.CardState{
+				ID:            *stateID,
+				CardID:        *stateCardID,
+				Due:           *due,
+				Stability:     *stability,
+				Difficulty:    *difficulty,
+				ElapsedDays:   *elapsedDays,
+				ScheduledDays: *scheduledDays,
+				Reps:          *reps,
+				Lapses:        *lapses,
+				State:         *state,
+				LastReview:    lastReview,
+			}
+		}
+		cards = append(cards, c)
+	}
+	return cards, rows.Err()
 }

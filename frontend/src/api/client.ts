@@ -1,4 +1,4 @@
-import type { User, Deck, DeckWithStats, Card, CardWithState, CardState, Tag, DueCalendarDay } from '../types';
+import type { User, Deck, DeckWithStats, Card, CardWithState, CardState, StudySession, Tag, DueCalendarDay } from '../types';
 
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:8080/api';
 const UNAUTHORIZED_EVENT = 'fsrs:unauthorized';
@@ -108,14 +108,14 @@ export async function getDeck(id: string): Promise<Deck> {
 export async function createDeck(name: string, description: string): Promise<Deck> {
   return request<Deck>('/decks', {
     method: 'POST',
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ name, description, fuzz_enabled: false }),
   });
 }
 
-export async function updateDeck(id: string, name: string, description: string): Promise<Deck> {
+export async function updateDeck(id: string, name: string, description: string, fuzzEnabled: boolean = false): Promise<Deck> {
   return request<Deck>(`/decks/${id}`, {
     method: 'PUT',
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ name, description, fuzz_enabled: fuzzEnabled }),
   });
 }
 
@@ -127,6 +127,7 @@ export async function deleteDeck(id: string): Promise<void> {
 export interface DeckExport {
   name: string;
   description: string;
+  fuzz_enabled?: boolean;
   cards: { front: string; back: string; link?: string }[];
 }
 
@@ -178,6 +179,10 @@ export async function deleteCard(id: string): Promise<void> {
 // Study
 export async function getDueCards(deckId: string): Promise<CardWithState[]> {
   return request<CardWithState[]>(`/study/${deckId}`);
+}
+
+export async function getStudySession(deckId: string): Promise<StudySession> {
+  return request<StudySession>(`/study/${deckId}/session`);
 }
 
 export async function reviewCard(cardId: string, rating: number): Promise<CardState> {

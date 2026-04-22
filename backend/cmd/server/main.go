@@ -160,6 +160,7 @@ func main() {
 		// Study
 		r.Get("/api/study/stats", studyHandler.GetStats)
 		r.Get("/api/study/schedule", studyHandler.GetSchedule)
+		r.Get("/api/study/{deckId}/session", studyHandler.GetSession)
 		r.Get("/api/study/{deckId}", studyHandler.GetDueCards)
 		r.Post("/api/study/{cardId}/review", studyHandler.Review)
 	})

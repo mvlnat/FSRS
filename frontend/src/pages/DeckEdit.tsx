@@ -26,6 +26,7 @@ export function DeckEdit() {
   // Deck settings state
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [fuzzEnabled, setFuzzEnabled] = useState(false);
   const [savingDeck, setSavingDeck] = useState(false);
 
   // Tag management state
@@ -123,6 +124,7 @@ export function DeckEdit() {
       setTags(tagsData);
       setName(deckData.name);
       setDescription(deckData.description);
+      setFuzzEnabled(deckData.fuzz_enabled);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load deck');
@@ -148,7 +150,7 @@ export function DeckEdit() {
 
     setSavingDeck(true);
     try {
-      await api.updateDeck(id, trimmedName, description);
+      await api.updateDeck(id, trimmedName, description, fuzzEnabled);
       await loadDeck();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update deck');
@@ -328,9 +330,25 @@ export function DeckEdit() {
                 rows={4}
               />
             </div>
-	            <button type="submit" disabled={savingDeck || !name.trim()}>
-	              {savingDeck ? 'Saving...' : 'Save Changes'}
-	            </button>
+            <div className="deck-setting-toggle">
+              <label htmlFor="fuzz-enabled" className="deck-setting-toggle-label">
+                <span className="deck-setting-toggle-copy">
+                  <span className="deck-setting-toggle-title">Enable Fuzz For Long-Term Reviews</span>
+                  <span className="deck-setting-toggle-description">
+                    Slightly randomize day-based review intervals to spread future workload. Short learning steps are not affected.
+                  </span>
+                </span>
+                <input
+                  id="fuzz-enabled"
+                  type="checkbox"
+                  checked={fuzzEnabled}
+                  onChange={(e) => setFuzzEnabled(e.target.checked)}
+                />
+              </label>
+            </div>
+            <button type="submit" disabled={savingDeck || !name.trim()}>
+              {savingDeck ? 'Saving...' : 'Save Changes'}
+            </button>
           </form>
 
           <div className="tags-section">

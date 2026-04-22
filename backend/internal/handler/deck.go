@@ -40,6 +40,7 @@ func NewDeckHandler(deckRepo *repository.DeckRepository, cardRepo *repository.Ca
 type createDeckRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	FuzzEnabled bool   `json:"fuzz_enabled"`
 }
 
 const maxDeckNameLength = 255
@@ -98,7 +99,7 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deck, err := h.deckRepo.Create(r.Context(), userID, req.Name, req.Description)
+	deck, err := h.deckRepo.Create(r.Context(), userID, req.Name, req.Description, req.FuzzEnabled)
 	if err == repository.ErrInvalidInput {
 		http.Error(w, "Name is required", http.StatusBadRequest)
 		return
@@ -160,7 +161,7 @@ func (h *DeckHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deck, err := h.deckRepo.Update(r.Context(), deckID, req.Name, req.Description)
+	deck, err := h.deckRepo.Update(r.Context(), deckID, req.Name, req.Description, req.FuzzEnabled)
 	if err == repository.ErrInvalidInput {
 		http.Error(w, "Name is required", http.StatusBadRequest)
 		return
@@ -224,6 +225,7 @@ func (h *DeckHandler) Stats(w http.ResponseWriter, r *http.Request) {
 type DeckExport struct {
 	Name        string       `json:"name"`
 	Description string       `json:"description"`
+	FuzzEnabled bool         `json:"fuzz_enabled,omitempty"`
 	Cards       []CardExport `json:"cards"`
 }
 
@@ -260,6 +262,7 @@ func (h *DeckHandler) Export(w http.ResponseWriter, r *http.Request) {
 	export := DeckExport{
 		Name:        deck.Name,
 		Description: deck.Description,
+		FuzzEnabled: deck.FuzzEnabled,
 		Cards:       make([]CardExport, len(cards)),
 	}
 	for i, card := range cards {
@@ -329,7 +332,7 @@ func (h *DeckHandler) Import(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create deck and cards atomically
-	deck, err := h.deckRepo.ImportDeckWithCards(r.Context(), userID, export.Name, export.Description, cards)
+	deck, err := h.deckRepo.ImportDeckWithCards(r.Context(), userID, export.Name, export.Description, export.FuzzEnabled, cards)
 	if err == repository.ErrInvalidInput {
 		http.Error(w, "Deck import contains invalid content", http.StatusBadRequest)
 		return
