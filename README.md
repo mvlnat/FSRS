@@ -100,9 +100,9 @@ Expected flow:
 4. Push the branch or otherwise make it available for review.
 5. Merge the verified branch into `main`.
 6. Release from the verified `main` state in `/Users/ziyangli/Coding/fsrs`.
-7. Build production Docker images locally only. Do not build on the droplet.
-8. Transfer only the release artifacts needed by production, load the prebuilt images on the droplet, and restart the stack from `docker-compose.prod.yml`.
-9. Clean up the droplet after deploy so it remains runtime-only instead of becoming a copy of the development workspace.
+7. Build production Docker images locally only. Do not build on the production VM.
+8. Transfer only the release artifacts needed by production, load the prebuilt images on the VM, and restart the stack from `docker-compose.prod.yml`.
+9. Clean up the production VM after deploy so it remains runtime-only instead of becoming a copy of the development workspace.
 
 Example branch flow:
 
@@ -127,7 +127,33 @@ git merge --ff-only <change-branch>
 ## Production Notes
 
 - `docker-compose.yml` assumes HTTPS termination and mounted certificates at `./certs/fullchain.pem` and `./certs/privkey.pem`.
-- `docker-compose.prod.yml` is the droplet-targeted stack and expects Let's Encrypt certs at `/etc/letsencrypt/live/fsrs.ziyang.li/`.
+- `docker-compose.prod.yml` is the production-targeted stack and expects Let's Encrypt certs at `/etc/letsencrypt/live/fsrs.ziyang.li/`.
 - The backend now refuses to start in production unless `SECURE_COOKIES=true`.
-- The droplet is a runtime host, not a build host. Keep builds local and publish prebuilt Docker images to the droplet.
+- The production VM is a runtime host, not a build host. Keep builds local and publish prebuilt Docker images to the VM.
 - After a successful deploy, `/root/fsrs` should normally contain only `.env`, `docker-compose.prod.yml`, and `nginx.conf`. Source trees, `node_modules`, temporary tar archives, local cert copies, and other dev/release leftovers should be removed.
+- Current production host: `root@5.78.201.47`
+
+## Production Bootstrap
+
+Use this once on a fresh production VM before the normal image upload/restart flow:
+
+```bash
+PROD_HOST=root@5.78.201.47
+
+ssh "$PROD_HOST" "apt-get update && apt-get install -y docker.io docker-compose-v2 certbot"
+ssh "$PROD_HOST" "certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d fsrs.ziyang.li"
+ssh "$PROD_HOST" "mkdir -p /root/fsrs && chmod 700 /root/fsrs"
+scp docker-compose.prod.yml nginx.conf "$PROD_HOST":/root/fsrs/
+scp /path/to/prod.env "$PROD_HOST":/root/fsrs/.env
+ssh "$PROD_HOST" "chmod 600 /root/fsrs/.env"
+```
+
+Because the production certificate uses Certbot's `standalone` mode, renewals must temporarily free host port `80`. Install renewal hooks on the VM so Certbot stops `fsrs-nginx` before renewal and restarts it afterward:
+
+```bash
+ssh "$PROD_HOST" "mkdir -p /etc/letsencrypt/renewal-hooks/pre /etc/letsencrypt/renewal-hooks/post"
+scp ./scripts/letsencrypt-stop-fsrs-nginx.sh "$PROD_HOST":/etc/letsencrypt/renewal-hooks/pre/stop-fsrs-nginx.sh
+scp ./scripts/letsencrypt-start-fsrs-nginx.sh "$PROD_HOST":/etc/letsencrypt/renewal-hooks/post/start-fsrs-nginx.sh
+ssh "$PROD_HOST" "chmod 755 /etc/letsencrypt/renewal-hooks/pre/stop-fsrs-nginx.sh /etc/letsencrypt/renewal-hooks/post/start-fsrs-nginx.sh"
+ssh "$PROD_HOST" "certbot renew --dry-run --no-random-sleep-on-renew"
+```

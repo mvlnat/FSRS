@@ -9,7 +9,7 @@
 5. **Always run checks before merge** - Run backend/frontend tests and builds before moving a change forward
 6. **Review before merge** - Do code review before moving branch work into `main`
 7. **Merge before deploy** - Once the reviewed branch looks good, merge it into `main`
-8. **Always build and push from `main`** - After the merged `main` state passes checks, build Docker images and deploy to droplet
+8. **Always build and push from `main`** - After the merged `main` state passes checks, build Docker images and deploy to the production VM
 
 ## Preferred Git Flow
 
@@ -62,7 +62,13 @@ docker build --platform linux/amd64 -t fsrs-backend -f backend/Dockerfile ./back
 docker build --platform linux/amd64 -t fsrs-frontend -f frontend/Dockerfile ./frontend
 ```
 
-### Deploy to Droplet (Full Steps)
+### Deploy to Production VM (Full Steps)
+
+Set the current production host once for the shell session:
+
+```bash
+export PROD_HOST=root@5.78.201.47
+```
 
 **Step 1: Build for amd64**
 ```bash
@@ -75,21 +81,21 @@ docker build --platform linux/amd64 -t fsrs-frontend -f frontend/Dockerfile ./fr
 ```bash
 docker save fsrs-backend:latest | gzip > /tmp/fsrs-backend.tar.gz
 docker save fsrs-frontend:latest | gzip > /tmp/fsrs-frontend.tar.gz
-scp /tmp/fsrs-backend.tar.gz /tmp/fsrs-frontend.tar.gz root@161.35.3.230:/root/
+scp /tmp/fsrs-backend.tar.gz /tmp/fsrs-frontend.tar.gz "$PROD_HOST":/root/
 ```
 
 **Step 3: Load and restart on server**
 ```bash
-ssh root@161.35.3.230 "gunzip -c /root/fsrs-backend.tar.gz | docker load && gunzip -c /root/fsrs-frontend.tar.gz | docker load && cd /root/fsrs && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up -d"
+ssh "$PROD_HOST" "gunzip -c /root/fsrs-backend.tar.gz | docker load && gunzip -c /root/fsrs-frontend.tar.gz | docker load && cd /root/fsrs && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up -d"
 ```
 
 **Step 4: Verify deployment**
 ```bash
 # Check containers are running with correct images
-ssh root@161.35.3.230 "docker ps && docker inspect --format='{{.Name}}: {{.Image}}' fsrs-backend-1 fsrs-frontend-1"
+ssh "$PROD_HOST" "docker ps && docker inspect --format='{{.Name}}: {{.Image}}' fsrs-backend-1 fsrs-frontend-1"
 
 # Clean up old images
-ssh root@161.35.3.230 "docker image prune -f"
+ssh "$PROD_HOST" "docker image prune -f"
 
 # Test site responds
 curl -s -o /dev/null -w "%{http_code}" https://fsrs.ziyang.li/
@@ -97,14 +103,30 @@ curl -s -o /dev/null -w "%{http_code}" https://fsrs.ziyang.li/
 
 **One-liner (after building)**
 ```bash
-docker save fsrs-backend:latest | gzip > /tmp/fsrs-backend.tar.gz && docker save fsrs-frontend:latest | gzip > /tmp/fsrs-frontend.tar.gz && scp /tmp/fsrs-backend.tar.gz /tmp/fsrs-frontend.tar.gz root@161.35.3.230:/root/ && ssh root@161.35.3.230 "gunzip -c /root/fsrs-backend.tar.gz | docker load && gunzip -c /root/fsrs-frontend.tar.gz | docker load && cd /root/fsrs && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up -d && docker image prune -f"
+docker save fsrs-backend:latest | gzip > /tmp/fsrs-backend.tar.gz && docker save fsrs-frontend:latest | gzip > /tmp/fsrs-frontend.tar.gz && scp /tmp/fsrs-backend.tar.gz /tmp/fsrs-frontend.tar.gz "$PROD_HOST":/root/ && ssh "$PROD_HOST" "gunzip -c /root/fsrs-backend.tar.gz | docker load && gunzip -c /root/fsrs-frontend.tar.gz | docker load && cd /root/fsrs && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up -d && docker image prune -f"
+```
+
+### Fresh Host Bootstrap
+```bash
+export PROD_HOST=root@5.78.201.47
+
+ssh "$PROD_HOST" "apt-get update && apt-get install -y docker.io docker-compose-v2 certbot"
+ssh "$PROD_HOST" "certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d fsrs.ziyang.li"
+ssh "$PROD_HOST" "mkdir -p /root/fsrs && chmod 700 /root/fsrs"
+scp docker-compose.prod.yml nginx.conf "$PROD_HOST":/root/fsrs/
+scp /path/to/prod.env "$PROD_HOST":/root/fsrs/.env
+ssh "$PROD_HOST" "chmod 600 /root/fsrs/.env"
+scp ./scripts/letsencrypt-stop-fsrs-nginx.sh "$PROD_HOST":/etc/letsencrypt/renewal-hooks/pre/stop-fsrs-nginx.sh
+scp ./scripts/letsencrypt-start-fsrs-nginx.sh "$PROD_HOST":/etc/letsencrypt/renewal-hooks/post/start-fsrs-nginx.sh
+ssh "$PROD_HOST" "chmod 755 /etc/letsencrypt/renewal-hooks/pre/stop-fsrs-nginx.sh /etc/letsencrypt/renewal-hooks/post/start-fsrs-nginx.sh"
+ssh "$PROD_HOST" "certbot renew --dry-run --no-random-sleep-on-renew"
 ```
 
 ## Server Info
 
-- **Droplet IP**: 161.35.3.230
+- **Production VM IP**: 5.78.201.47
 - **Domain**: fsrs.ziyang.li
-- **Low memory (458MB)**: Build images locally, not on server
+- **Build policy**: Build images locally, not on server
 
 ---
 

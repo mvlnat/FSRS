@@ -5,7 +5,7 @@
 - **Frontend**: TypeScript, React, Vite
 - **Backend**: Go (Chi router, pgx, go-fsrs)
 - **Database**: PostgreSQL
-- **Hosting**: DigitalOcean Droplet (Docker Compose)
+- **Hosting**: Hetzner VM (Docker Compose)
 
 ## Features
 
