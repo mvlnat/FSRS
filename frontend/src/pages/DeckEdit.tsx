@@ -8,6 +8,11 @@ import { normalizeOptionalExternalLink } from '../utils/links';
 type Tab = 'settings' | 'cards';
 type SortOption = 'newest' | 'oldest' | 'alpha' | 'mostReviews' | 'leastReviews';
 
+const CARDS_TAB_ID = 'deck-edit-tab-cards';
+const SETTINGS_TAB_ID = 'deck-edit-tab-settings';
+const CARDS_PANEL_ID = 'deck-edit-panel-cards';
+const SETTINGS_PANEL_ID = 'deck-edit-panel-settings';
+
 export function DeckEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -257,7 +262,13 @@ export function DeckEdit() {
     setEditTagIds(card.tags?.map(t => t.id) || []);
   };
 
-  if (loading) return <div className="deck-edit-container">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="deck-edit-container" role="status" aria-live="polite">
+        Loading...
+      </div>
+    );
+  }
   if (!deck) {
     return (
       <div className="deck-edit-container">
@@ -270,7 +281,7 @@ export function DeckEdit() {
 
         {error ? (
           <>
-            <div className="error">{error}</div>
+            <div className="error" role="alert">{error}</div>
             <button onClick={() => void loadDeck()} className="btn-secondary">
               Retry
             </button>
@@ -291,24 +302,39 @@ export function DeckEdit() {
         <h1>{deck.name}</h1>
       </div>
 
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert">{error}</div>}
 
-      <div className="tabs">
+      <div className="tabs" role="tablist" aria-label="Deck editor sections">
         <button
+          type="button"
+          id={CARDS_TAB_ID}
+          role="tab"
           className={`tab ${activeTab === 'cards' ? 'active' : ''}`}
+          aria-selected={activeTab === 'cards'}
+          aria-controls={CARDS_PANEL_ID}
           onClick={() => setActiveTab('cards')}
         >
           Cards ({cards.length})
         </button>
         <button
+          type="button"
+          id={SETTINGS_TAB_ID}
+          role="tab"
           className={`tab ${activeTab === 'settings' ? 'active' : ''}`}
+          aria-selected={activeTab === 'settings'}
+          aria-controls={SETTINGS_PANEL_ID}
           onClick={() => setActiveTab('settings')}
         >
           Settings
         </button>
       </div>
 
-      {activeTab === 'settings' && (
+      <section
+        id={SETTINGS_PANEL_ID}
+        role="tabpanel"
+        aria-labelledby={SETTINGS_TAB_ID}
+        hidden={activeTab !== 'settings'}
+      >
         <>
           <form onSubmit={handleUpdateDeck} className="deck-form">
             <div className="form-group">
@@ -355,7 +381,9 @@ export function DeckEdit() {
             <h3>Tags</h3>
             <p>Create tags to categorize your cards. Tags can be assigned to cards when editing them.</p>
             <form onSubmit={handleAddTag} className="add-tag-form">
+              <label className="sr-only" htmlFor="new-tag-name">New tag name</label>
               <input
+                id="new-tag-name"
                 type="text"
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
@@ -370,8 +398,10 @@ export function DeckEdit() {
                   <div key={tag.id} className="tag-item">
                     <span className="tag-name">{tag.name}</span>
                     <button
+                      type="button"
                       onClick={() => handleDeleteTag(tag.id)}
                       className="btn-icon btn-icon-danger"
+                      aria-label={`Delete tag ${tag.name}`}
                       title="Delete tag"
                     >
                       ✕
@@ -392,13 +422,20 @@ export function DeckEdit() {
             </button>
           </div>
         </>
-      )}
+      </section>
 
-      {activeTab === 'cards' && (
+      <section
+        id={CARDS_PANEL_ID}
+        role="tabpanel"
+        aria-labelledby={CARDS_TAB_ID}
+        hidden={activeTab !== 'cards'}
+      >
         <div className="cards-section">
           <div className="cards-toolbar">
             <div className="search-box">
+              <label className="sr-only" htmlFor="card-search">Search cards</label>
               <input
+                id="card-search"
                 type="text"
                 placeholder="Search cards..."
                 value={searchQuery}
@@ -407,8 +444,10 @@ export function DeckEdit() {
               />
               {searchQuery && (
                 <button
+                  type="button"
                   onClick={() => setSearchQuery('')}
                   className="search-clear"
+                  aria-label="Clear search"
                   title="Clear search"
                 >
                   ✕
@@ -417,18 +456,24 @@ export function DeckEdit() {
             </div>
             <div className="cards-toolbar-right">
               {tags.length > 0 && (
-                <select
-                  value={filterTagId}
-                  onChange={(e) => setFilterTagId(e.target.value)}
-                  className="tag-filter-select"
-                >
-                  <option value="">All Tags</option>
-                  {tags.map(tag => (
-                    <option key={tag.id} value={tag.id}>{tag.name}</option>
-                  ))}
-                </select>
+                <>
+                  <label className="sr-only" htmlFor="card-tag-filter">Filter cards by tag</label>
+                  <select
+                    id="card-tag-filter"
+                    value={filterTagId}
+                    onChange={(e) => setFilterTagId(e.target.value)}
+                    className="tag-filter-select"
+                  >
+                    <option value="">All Tags</option>
+                    {tags.map(tag => (
+                      <option key={tag.id} value={tag.id}>{tag.name}</option>
+                    ))}
+                  </select>
+                </>
               )}
+              <label className="sr-only" htmlFor="card-sort">Sort cards</label>
               <select
+                id="card-sort"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as SortOption)}
                 className="sort-select"
@@ -519,6 +564,11 @@ export function DeckEdit() {
             ) : (
               filteredCards.map((card) => {
                 const safeLink = normalizeOptionalExternalLink(card.link);
+                const cardTitle = getCardTitle(card.front);
+                const editFrontId = `edit-front-${card.id}`;
+                const editBackId = `edit-back-${card.id}`;
+                const editLinkId = `edit-link-${card.id}`;
+                const tagsGroupLabelId = `edit-tags-${card.id}`;
 
                 return (
                   <div key={card.id} className="card-item">
@@ -529,8 +579,9 @@ export function DeckEdit() {
                         </p>
                         <div className="card-form-grid">
                           <div className="form-group">
-                            <label>Front</label>
+                            <label htmlFor={editFrontId}>Front</label>
                             <textarea
+                              id={editFrontId}
                               value={editFront}
                               onChange={(e) => setEditFront(e.target.value)}
                               rows={6}
@@ -562,8 +613,9 @@ export function DeckEdit() {
                             )}
                           </div>
                           <div className="form-group">
-                            <label>Back</label>
+                            <label htmlFor={editBackId}>Back</label>
                             <textarea
+                              id={editBackId}
                               value={editBack}
                               onChange={(e) => setEditBack(e.target.value)}
                               rows={6}
@@ -571,8 +623,9 @@ export function DeckEdit() {
                           </div>
                         </div>
                         <div className="form-group">
-                          <label>Link (optional)</label>
+                          <label htmlFor={editLinkId}>Link (optional)</label>
                           <input
+                            id={editLinkId}
                             type="url"
                             value={editLink}
                             onChange={(e) => setEditLink(e.target.value)}
@@ -581,8 +634,8 @@ export function DeckEdit() {
                         </div>
                         {tags.length > 0 && (
                           <div className="form-group">
-                            <label>Tags</label>
-                            <div className="tag-selector">
+                            <p id={tagsGroupLabelId} className="form-label">Tags</p>
+                            <div className="tag-selector" role="group" aria-labelledby={tagsGroupLabelId}>
                               {tags.map(tag => (
                                 <button
                                   key={tag.id}
@@ -603,9 +656,9 @@ export function DeckEdit() {
                       </div>
                     ) : (
                       <div className="card-row">
-                        <div className="card-preview" onClick={() => startEditing(card)}>
+                        <button type="button" className="card-preview" onClick={() => startEditing(card)}>
                           <div className="card-preview-main">
-                            <span className="card-preview-text">{getCardTitle(card.front)}</span>
+                            <span className="card-preview-text">{cardTitle}</span>
                             {card.tags && card.tags.length > 0 && (
                               <div className="card-tags">
                                 {card.tags.map(tag => (
@@ -619,17 +672,36 @@ export function DeckEdit() {
                               {card.state.reps > 0 ? `${card.state.reps} reps` : 'New'}
                             </span>
                           )}
-                        </div>
+                        </button>
                         <div className="card-row-actions">
                           {safeLink && (
-                            <a href={safeLink} target="_blank" rel="noopener noreferrer" className="btn-icon" title="Open link">
+                            <a
+                              href={safeLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn-icon"
+                              aria-label={`Open link for ${cardTitle}`}
+                              title="Open link"
+                            >
                               ↗
                             </a>
                           )}
-                          <button onClick={() => startEditing(card)} className="btn-icon" title="Edit">
+                          <button
+                            type="button"
+                            onClick={() => startEditing(card)}
+                            className="btn-icon"
+                            aria-label={`Edit card ${cardTitle}`}
+                            title="Edit"
+                          >
                             ✎
                           </button>
-                          <button onClick={() => handleDeleteCard(card.id)} className="btn-icon btn-icon-danger" title="Delete">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCard(card.id)}
+                            className="btn-icon btn-icon-danger"
+                            aria-label={`Delete card ${cardTitle}`}
+                            title="Delete"
+                          >
                             ✕
                           </button>
                         </div>
@@ -641,7 +713,7 @@ export function DeckEdit() {
             )}
           </div>
         </div>
-      )}
+      </section>
     </div>
   );
 }

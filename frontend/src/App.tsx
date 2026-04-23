@@ -22,7 +22,11 @@ function AuthRoute({
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
-    return <div className="loading">Loading...</div>;
+    return (
+      <div className="loading" role="status" aria-live="polite">
+        Loading...
+      </div>
+    );
   }
 
   if (publicOnly) {
@@ -37,6 +41,9 @@ function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
       <header className="header">
         <div className="header-brand">
           <Link to="/" className="header-title">FSRS</Link>
@@ -51,7 +58,9 @@ function Layout({ children }: { children: React.ReactNode }) {
           </div>
         )}
       </header>
-      <main className="main">{children}</main>
+      <main id="main-content" className="main" tabIndex={-1}>
+        {children}
+      </main>
     </div>
   );
 }

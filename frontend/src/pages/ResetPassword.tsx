@@ -56,8 +56,12 @@ export function ResetPassword() {
     <div className="auth-container">
       <h1>Reset Password</h1>
       <form onSubmit={handleSubmit}>
-        {success && <div className="success">{success}</div>}
-        {error && <div className="error">{error}</div>}
+        {success && (
+          <div className="success" role="status" aria-live="polite">
+            {success}
+          </div>
+        )}
+        {error && <div className="error" role="alert">{error}</div>}
         <div className="form-group">
           <label htmlFor="password">New Password</label>
           <input

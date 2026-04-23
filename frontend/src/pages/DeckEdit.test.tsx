@@ -77,7 +77,7 @@ function renderDeckEdit() {
 
 describe('DeckEdit', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('reloads the deck after saving deck settings', async () => {
@@ -92,7 +92,7 @@ describe('DeckEdit', () => {
     renderDeckEdit();
 
     await screen.findByRole('heading', { name: 'Biology' });
-    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.click(screen.getByRole('tab', { name: 'Settings' }));
 
     const nameInput = await screen.findByLabelText('Deck Name');
     await user.clear(nameInput);
@@ -139,7 +139,7 @@ describe('DeckEdit', () => {
 
     renderDeckEdit();
 
-    await screen.findByRole('button', { name: 'Cards (1)' });
+    await screen.findByRole('tab', { name: 'Cards (1)' });
     await user.click(screen.getByRole('button', { name: 'Add Card' }));
 
     await user.type(screen.getByLabelText('Front'), 'Added question');
@@ -152,7 +152,7 @@ describe('DeckEdit', () => {
     await waitFor(() => {
       expect(mockedApi.getCards).toHaveBeenCalledTimes(2);
     });
-    await screen.findByRole('button', { name: 'Cards (2)' });
+    await screen.findByRole('tab', { name: 'Cards (2)' });
     expect(screen.getByText('Added question')).toBeInTheDocument();
   });
 
@@ -165,7 +165,7 @@ describe('DeckEdit', () => {
 
     renderDeckEdit();
 
-    await screen.findByRole('button', { name: 'Cards (1)' });
+    await screen.findByRole('tab', { name: 'Cards (1)' });
     await user.click(screen.getByRole('button', { name: 'Add Card' }));
     await user.type(screen.getByLabelText('Front'), 'Existing question\nwith extra detail');
 
@@ -266,12 +266,40 @@ describe('DeckEdit', () => {
     const { container } = renderDeckEdit();
 
     await screen.findByText('Beta topic');
-    await user.selectOptions(screen.getByRole('combobox'), 'alpha');
+    await user.selectOptions(screen.getByLabelText('Sort cards'), 'alpha');
 
     const titles = Array.from(container.querySelectorAll('.card-preview-text')).map((node) =>
       node.textContent?.trim(),
     );
     expect(titles).toEqual(['Alpha topic', 'Beta topic']);
+  });
+
+  it('exposes card editor controls with accessible names', async () => {
+    const linkedCards: CardWithState[] = [
+      {
+        ...initialCards[0],
+        link: 'https://example.com/card',
+        tags: biologyTags,
+      },
+    ];
+
+    mockedApi.getDeck.mockResolvedValue(baseDeck);
+    mockedApi.getCards.mockResolvedValue(linkedCards);
+    mockedApi.getTags.mockResolvedValue(biologyTags);
+
+    renderDeckEdit();
+
+    await screen.findByRole('button', { name: /Existing question.*Cells.*New/i });
+    expect(screen.getByLabelText('Search cards')).toBeInTheDocument();
+    expect(screen.getByLabelText('Sort cards')).toBeInTheDocument();
+    expect(screen.getByLabelText('Filter cards by tag')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open link for Existing question' })).toHaveAttribute(
+      'href',
+      'https://example.com/card',
+    );
+
+    await userEvent.setup().click(screen.getByRole('tab', { name: 'Settings' }));
+    expect(screen.getByRole('button', { name: 'Delete tag Cells' })).toBeInTheDocument();
   });
 
   it('clears a stale error after a successful deck reload', async () => {
@@ -288,7 +316,7 @@ describe('DeckEdit', () => {
     renderDeckEdit();
 
     await screen.findByRole('heading', { name: 'Biology' });
-    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.click(screen.getByRole('tab', { name: 'Settings' }));
 
     const nameInput = await screen.findByLabelText('Deck Name');
     await user.clear(nameInput);

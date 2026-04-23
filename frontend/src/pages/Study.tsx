@@ -609,7 +609,13 @@ export function Study() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  if (loading) return <div className="study-container">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="study-container" role="status" aria-live="polite">
+        Loading...
+      </div>
+    );
+  }
 
   const currentCard = cards[0];
   const nextPendingReview = pendingReviews[0];
@@ -626,7 +632,7 @@ export function Study() {
         Back to Decks
       </button>
 
-      {error && !isErrorState && <div className="error">{error}</div>}
+      {error && !isErrorState && <div className="error" role="alert">{error}</div>}
 
       {totalInSession > 0 && (
         <div className="progress-bar-container">
@@ -645,19 +651,19 @@ export function Study() {
       </div>
 
       {isWaiting ? (
-        <div className="study-waiting">
+        <div className="study-waiting" role="status" aria-live="polite">
           <h2>Next Review Soon</h2>
           <p>
             This card is in a short learning step and will return in {nextReviewCountdown}.
           </p>
         </div>
       ) : isSyncing ? (
-        <div className="study-waiting">
+        <div className="study-waiting" role="status" aria-live="polite">
           <h2>Saving Answers</h2>
           <p>Your ratings are being written in the background.</p>
         </div>
       ) : isErrorState ? (
-        <div className="study-complete">
+        <div className="study-complete" role="alert">
           <h2>Unable to Load Session</h2>
           <p>{error}</p>
           <button onClick={() => void loadStudySession(true)}>Retry</button>

@@ -23,6 +23,7 @@ describe('App end-to-end flows', () => {
     const user = userEvent.setup();
     render(<App />);
 
+    expect(screen.getByRole('link', { name: 'Skip to content' })).toHaveAttribute('href', '#main-content');
     await screen.findByRole('heading', { name: 'Register' });
 
     await user.type(screen.getByLabelText('Email'), 'ada@example.com');
@@ -56,7 +57,7 @@ describe('App end-to-end flows', () => {
     await user.click(screen.getByRole('button', { name: 'Add Card' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Cards (1)' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Cards (1)' })).toBeInTheDocument();
     });
     expect(screen.getByText('What is FSRS?')).toBeInTheDocument();
   });

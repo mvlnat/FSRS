@@ -322,7 +322,13 @@ export function Decks() {
     setSelectedDateKey(getDateKey(new Date()));
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) {
+    return (
+      <div className="loading" role="status" aria-live="polite">
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <div className="decks-container">
@@ -345,7 +351,7 @@ export function Decks() {
         </div>
       </div>
 
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert">{error}</div>}
 
       {stats && stats.totalReviews > 0 && (
         <div className="study-stats-card">
@@ -472,7 +478,7 @@ export function Decks() {
           </div>
         </div>
 
-        {dueCalendarError && <div className="error">{dueCalendarError}</div>}
+        {dueCalendarError && <div className="error" role="alert">{dueCalendarError}</div>}
 
         <div className="due-calendar-layout">
           <div className="due-calendar-grid" aria-busy={dueCalendarLoading}>
@@ -505,7 +511,9 @@ export function Decks() {
             <p className="due-calendar-detail-label">Selected Day</p>
             <h3>{fullDateFormatter.format(selectedDate)}</h3>
             {dueCalendarLoading ? (
-              <p className="due-calendar-empty">Loading due cards…</p>
+              <p className="due-calendar-empty" role="status" aria-live="polite">
+                Loading due cards…
+              </p>
             ) : selectedDay ? (
               <>
                 <p className="due-calendar-detail-total">{formatDueCount(selectedDay.total)}</p>

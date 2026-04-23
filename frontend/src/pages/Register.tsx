@@ -57,7 +57,7 @@ export function Register() {
     <div className="auth-container">
       <h1>Register</h1>
       <form onSubmit={handleSubmit}>
-        {error && <div className="error">{error}</div>}
+        {error && <div className="error" role="alert">{error}</div>}
         <div className="form-group">
           <label htmlFor="email">Email</label>
           <input

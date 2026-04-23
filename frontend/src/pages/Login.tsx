@@ -28,8 +28,12 @@ export function Login() {
     <div className="auth-container">
       <h1>Login</h1>
       <form onSubmit={handleSubmit}>
-        {info && <div className="success">{info}</div>}
-        {error && <div className="error">{error}</div>}
+        {info && (
+          <div className="success" role="status" aria-live="polite">
+            {info}
+          </div>
+        )}
+        {error && <div className="error" role="alert">{error}</div>}
         <div className="form-group">
           <label htmlFor="email">Email</label>
           <input

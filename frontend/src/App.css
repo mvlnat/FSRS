@@ -5,6 +5,24 @@
   flex-direction: column;
 }
 
+.skip-link {
+  position: absolute;
+  top: 12px;
+  left: 22px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--text-primary);
+  color: white;
+  z-index: 200;
+  transform: translateY(-160%);
+  transition: transform 0.2s ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+  text-decoration: none;
+}
+
 /* Header - Apple-style navigation */
 .header {
   background: rgba(255, 255, 255, 0.72);
@@ -237,6 +255,14 @@ button:disabled {
 }
 
 .form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.form-label {
   display: block;
   margin-bottom: 8px;
   font-size: 14px;
@@ -1322,10 +1348,16 @@ button:disabled {
 .card-preview {
   flex: 1;
   min-width: 0;
-  cursor: pointer;
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 4px 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  justify-content: flex-start;
+  border-radius: 8px;
 }
 
 .card-preview-text {
@@ -1349,6 +1381,17 @@ button:disabled {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
+}
+
+.card-preview:hover {
+  background: transparent;
+  color: inherit;
+  transform: none;
+}
+
+.card-preview:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.16);
 }
 
 .btn-icon,

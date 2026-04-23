@@ -40,8 +40,12 @@ export function VerifyEmail() {
   return (
     <div className="auth-container">
       <h1>Verify Email</h1>
-      {message && <div className="success">{message}</div>}
-      {error && <div className="error">{error}</div>}
+      {message && (
+        <div className="success" role="status" aria-live="polite">
+          {message}
+        </div>
+      )}
+      {error && <div className="error" role="alert">{error}</div>}
       <p>
         Continue to <Link to="/login">Login</Link>
       </p>

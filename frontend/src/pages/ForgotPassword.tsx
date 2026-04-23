@@ -30,8 +30,12 @@ export function ForgotPassword() {
     <div className="auth-container">
       <h1>Forgot Password</h1>
       <form onSubmit={handleSubmit}>
-        {success && <div className="success">{success}</div>}
-        {error && <div className="error">{error}</div>}
+        {success && (
+          <div className="success" role="status" aria-live="polite">
+            {success}
+          </div>
+        )}
+        {error && <div className="error" role="alert">{error}</div>}
         <div className="form-group">
           <label htmlFor="email">Email</label>
           <input
