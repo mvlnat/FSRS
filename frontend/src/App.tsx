@@ -3,6 +3,9 @@ import { AuthProvider } from './hooks/AuthProvider';
 import { useAuth } from './hooks/useAuth';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { ForgotPassword } from './pages/ForgotPassword';
+import { ResetPassword } from './pages/ResetPassword';
+import { VerifyEmail } from './pages/VerifyEmail';
 import { Decks } from './pages/Decks';
 import { DeckEdit } from './pages/DeckEdit';
 import { Study } from './pages/Study';
@@ -73,6 +76,30 @@ function App() {
               element={
                 <AuthRoute publicOnly>
                   <Register />
+                </AuthRoute>
+              }
+            />
+            <Route
+              path="/forgot-password"
+              element={
+                <AuthRoute publicOnly>
+                  <ForgotPassword />
+                </AuthRoute>
+              }
+            />
+            <Route
+              path="/reset-password"
+              element={
+                <AuthRoute publicOnly>
+                  <ResetPassword />
+                </AuthRoute>
+              }
+            />
+            <Route
+              path="/verify-email"
+              element={
+                <AuthRoute publicOnly>
+                  <VerifyEmail />
                 </AuthRoute>
               }
             />

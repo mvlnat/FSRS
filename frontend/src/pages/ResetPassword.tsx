@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { Link, useSearchParams } from 'react-router-dom';
+import * as api from '../api/client';
 import {
   getPasswordByteLength,
   getPasswordCharacterCount,
@@ -8,28 +8,26 @@ import {
   minPasswordCharacters,
 } from '../utils/password';
 
-const maxEmailLength = 255;
-
-export function Register() {
-  const [email, setEmail] = useState('');
+export function ResetPassword() {
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get('token')?.trim() ?? '';
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const { register, loading } = useAuth();
-  const navigate = useNavigate();
+  const [success, setSuccess] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
 
-    const trimmedEmail = email.trim();
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
+    if (!token) {
+      setError('Reset token is missing');
       return;
     }
-    if (trimmedEmail.length > maxEmailLength) {
-      setError('Email must be 255 characters or fewer');
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
     if (getPasswordCharacterCount(password) < minPasswordCharacters) {
@@ -41,36 +39,27 @@ export function Register() {
       return;
     }
 
+    setSubmitting(true);
     try {
-      await register(trimmedEmail, password);
-      navigate('/login', {
-        state: {
-          info: 'If the email is available, a verification email has been sent.',
-        },
-      });
+      const response = await api.confirmPasswordReset(token, password);
+      setSuccess(response.message);
+      setPassword('');
+      setConfirmPassword('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed');
+      setError(err instanceof Error ? err.message : 'Password reset failed');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
     <div className="auth-container">
-      <h1>Register</h1>
+      <h1>Reset Password</h1>
       <form onSubmit={handleSubmit}>
+        {success && <div className="success">{success}</div>}
         {error && <div className="error">{error}</div>}
         <div className="form-group">
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            maxLength={maxEmailLength}
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="password">Password</label>
+          <label htmlFor="password">New Password</label>
           <input
             id="password"
             type="password"
@@ -81,7 +70,7 @@ export function Register() {
           />
         </div>
         <div className="form-group">
-          <label htmlFor="confirmPassword">Confirm Password</label>
+          <label htmlFor="confirmPassword">Confirm New Password</label>
           <input
             id="confirmPassword"
             type="password"
@@ -90,12 +79,12 @@ export function Register() {
             required
           />
         </div>
-        <button type="submit" disabled={loading}>
-          {loading ? 'Loading...' : 'Register'}
+        <button type="submit" disabled={submitting}>
+          {submitting ? 'Loading...' : 'Reset Password'}
         </button>
       </form>
       <p>
-        Already have an account? <Link to="/login">Login</Link>
+        Back to <Link to="/login">Login</Link>
       </p>
     </div>
   );

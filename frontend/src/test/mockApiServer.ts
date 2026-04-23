@@ -213,8 +213,26 @@ export function createMockApiServer(options: MockApiServerOptions = {}) {
       }
 
       return createJSONResponse({
-        message: 'If the email is available, the account is ready to sign in.',
+        message: 'If the email is available, a verification email has been sent.',
       }, 202);
+    }
+
+    if (pathname === '/api/auth/password-reset/request' && method === 'POST') {
+      return createJSONResponse({
+        message: 'If the account exists, a password reset email has been sent.',
+      }, 202);
+    }
+
+    if (pathname === '/api/auth/password-reset/confirm' && method === 'POST') {
+      return createJSONResponse({
+        message: 'Password has been reset. You can now sign in.',
+      });
+    }
+
+    if (pathname === '/api/auth/verify-email/confirm' && method === 'POST') {
+      return createJSONResponse({
+        message: 'Email verified. You can now sign in.',
+      });
     }
 
     if (pathname === '/api/auth/login' && method === 'POST') {

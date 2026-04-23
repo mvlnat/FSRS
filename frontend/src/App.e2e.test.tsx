@@ -31,7 +31,7 @@ describe('App end-to-end flows', () => {
     await user.click(screen.getByRole('button', { name: 'Register' }));
 
     await screen.findByRole('heading', { name: 'Login' });
-    expect(screen.getByText('If the email is available, the account is ready to sign in.')).toBeInTheDocument();
+    expect(screen.getByText('If the email is available, a verification email has been sent.')).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Email'), 'ada@example.com');
     await user.type(screen.getByLabelText('Password'), 'password123');
@@ -122,5 +122,25 @@ describe('App end-to-end flows', () => {
     await screen.findByRole('heading', { name: 'How Study Works' });
     expect(screen.getByText(/comes back in about 1 minute/i)).toBeInTheDocument();
     expect(screen.getByText(/short-term learning steps are enabled/i)).toBeInTheDocument();
+  });
+
+  it('supports requesting a password reset from the login page', async () => {
+    const server = createMockApiServer();
+    restoreServer = server.restore;
+
+    window.history.replaceState({}, '', '/login');
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Login' });
+
+    await user.click(screen.getByRole('link', { name: 'Forgot your password?' }));
+
+    await screen.findByRole('heading', { name: 'Forgot Password' });
+    await user.type(screen.getByLabelText('Email'), 'ada@example.com');
+    await user.click(screen.getByRole('button', { name: 'Send Reset Link' }));
+
+    expect(await screen.findByText('If the account exists, a password reset email has been sent.')).toBeInTheDocument();
   });
 });

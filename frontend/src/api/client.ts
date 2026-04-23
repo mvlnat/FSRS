@@ -73,6 +73,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return text as T;
 }
 
+export interface ApiMessageResponse {
+  message: string;
+}
+
 // Auth
 export async function register(email: string, password: string): Promise<void> {
   return request<void>('/auth/register', {
@@ -94,6 +98,27 @@ export async function logout(): Promise<void> {
 
 export async function getMe(): Promise<User> {
   return request<User>('/auth/me');
+}
+
+export async function requestPasswordReset(email: string): Promise<ApiMessageResponse> {
+  return request<ApiMessageResponse>('/auth/password-reset/request', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function confirmPasswordReset(token: string, password: string): Promise<ApiMessageResponse> {
+  return request<ApiMessageResponse>('/auth/password-reset/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  });
+}
+
+export async function confirmEmailVerification(token: string): Promise<ApiMessageResponse> {
+  return request<ApiMessageResponse>('/auth/verify-email/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
 }
 
 // Decks
