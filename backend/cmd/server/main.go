@@ -229,6 +229,7 @@ func getAppBaseURL(environment string) (string, error) {
 func newAuthEmailSender(environment string) (interface {
 	SendVerificationEmail(ctx context.Context, email, verificationURL string) error
 	SendPasswordResetEmail(ctx context.Context, email, resetURL string) error
+	CheckConfig() error
 }, error) {
 	smtpHost := strings.TrimSpace(os.Getenv("SMTP_HOST"))
 	if smtpHost == "" {

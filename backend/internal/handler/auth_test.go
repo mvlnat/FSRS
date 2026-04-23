@@ -125,6 +125,7 @@ func (f fakeAuthEmailTokenStore) Consume(
 type fakeAuthEmailSender struct {
 	sendVerificationEmailFn  func(ctx context.Context, email, verificationURL string) error
 	sendPasswordResetEmailFn func(ctx context.Context, email, resetURL string) error
+	checkConfigFn            func() error
 }
 
 func (f fakeAuthEmailSender) SendVerificationEmail(ctx context.Context, email, verificationURL string) error {
@@ -139,6 +140,13 @@ func (f fakeAuthEmailSender) SendPasswordResetEmail(ctx context.Context, email, 
 		return nil
 	}
 	return f.sendPasswordResetEmailFn(ctx, email, resetURL)
+}
+
+func (f fakeAuthEmailSender) CheckConfig() error {
+	if f.checkConfigFn == nil {
+		return nil
+	}
+	return f.checkConfigFn()
 }
 
 type fakeHandlerAuthThrottle struct {
