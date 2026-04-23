@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/url"
@@ -68,6 +69,7 @@ type authEmailTokenStore interface {
 type authEmailSender interface {
 	SendVerificationEmail(ctx context.Context, email, verificationURL string) error
 	SendPasswordResetEmail(ctx context.Context, email, resetURL string) error
+	CheckConfig() error
 }
 
 type authThrottle interface {
@@ -206,8 +208,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if !h.allowEmailThrottle(w, r, registerEmailScope, req.Email, registerEmailLimit, registerEmailWindow, registerEmailBlockDuration) {
 		return
 	}
-	if err := h.requireEmailAuthDependencies(); err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	if !h.requireEmailCapability(w) {
 		return
 	}
 
@@ -355,8 +356,7 @@ func (h *AuthHandler) ResendVerificationEmail(w http.ResponseWriter, r *http.Req
 	if !h.allowEmailThrottle(w, r, verifyEmailResendScope, req.Email, verifyEmailResendLimit, verifyEmailResendWindow, verifyEmailResendBlockDuration) {
 		return
 	}
-	if err := h.requireEmailAuthDependencies(); err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	if !h.requireEmailCapability(w) {
 		return
 	}
 
@@ -434,8 +434,7 @@ func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Reques
 	) {
 		return
 	}
-	if err := h.requireEmailAuthDependencies(); err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	if !h.requireEmailCapability(w) {
 		return
 	}
 
@@ -596,6 +595,22 @@ func (h *AuthHandler) requireEmailAuthDependencies() error {
 		return authValidationError("email auth is not configured")
 	}
 	return nil
+}
+
+func (h *AuthHandler) requireEmailCapability(w http.ResponseWriter) bool {
+	if err := h.requireEmailAuthDependencies(); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return false
+	}
+	if err := h.emailSender.CheckConfig(); err != nil {
+		if errors.Is(err, ErrEmailSenderNotConfigured) {
+			http.Error(w, "Email delivery is not configured", http.StatusServiceUnavailable)
+			return false
+		}
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return false
+	}
+	return true
 }
 
 func (h *AuthHandler) sendVerificationEmail(ctx context.Context, user *model.User) error {

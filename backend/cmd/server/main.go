@@ -233,7 +233,8 @@ func newAuthEmailSender(environment string) (interface {
 	smtpHost := strings.TrimSpace(os.Getenv("SMTP_HOST"))
 	if smtpHost == "" {
 		if environment == "production" {
-			return nil, fmt.Errorf("SMTP_HOST is required in production")
+			log.Println("WARNING: SMTP is not configured in production. Email verification and password reset endpoints will return 503 until SMTP_* secrets are added.")
+			return handler.NewUnavailableAuthEmailSender(handler.ErrEmailSenderNotConfigured), nil
 		}
 
 		log.Println("WARNING: SMTP is not configured. Auth email links will be logged locally.")

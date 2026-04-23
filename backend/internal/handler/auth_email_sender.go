@@ -16,6 +16,8 @@ type SMTPAuthEmailSender struct {
 	auth smtp.Auth
 }
 
+var ErrEmailSenderNotConfigured = authValidationError("email sender is not configured")
+
 func NewSMTPAuthEmailSender(host string, port int, username, password, from string) (*SMTPAuthEmailSender, error) {
 	host = strings.TrimSpace(host)
 	from = strings.TrimSpace(from)
@@ -65,6 +67,10 @@ func (s *SMTPAuthEmailSender) send(_ context.Context, email, subject, body strin
 	return smtp.SendMail(s.addr, s.auth, s.from, []string{email}, []byte(message))
 }
 
+func (s *SMTPAuthEmailSender) CheckConfig() error {
+	return nil
+}
+
 type LogAuthEmailSender struct {
 	logger interface {
 		Printf(format string, v ...any)
@@ -87,6 +93,34 @@ func (s *LogAuthEmailSender) SendVerificationEmail(_ context.Context, email, ver
 func (s *LogAuthEmailSender) SendPasswordResetEmail(_ context.Context, email, resetURL string) error {
 	s.logger.Printf("password reset email for %s: %s", email, resetURL)
 	return nil
+}
+
+func (s *LogAuthEmailSender) CheckConfig() error {
+	return nil
+}
+
+type UnavailableAuthEmailSender struct {
+	err error
+}
+
+func NewUnavailableAuthEmailSender(err error) *UnavailableAuthEmailSender {
+	if err == nil {
+		err = ErrEmailSenderNotConfigured
+	}
+
+	return &UnavailableAuthEmailSender{err: err}
+}
+
+func (s *UnavailableAuthEmailSender) SendVerificationEmail(_ context.Context, _ string, _ string) error {
+	return s.err
+}
+
+func (s *UnavailableAuthEmailSender) SendPasswordResetEmail(_ context.Context, _ string, _ string) error {
+	return s.err
+}
+
+func (s *UnavailableAuthEmailSender) CheckConfig() error {
+	return s.err
 }
 
 func buildTextEmailBody(subject, intro, actionURL string) string {
