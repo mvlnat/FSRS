@@ -302,6 +302,28 @@ describe('DeckEdit', () => {
     expect(screen.getByRole('button', { name: 'Delete tag Cells' })).toBeInTheDocument();
   });
 
+  it('supports keyboard navigation between editor tabs', async () => {
+    const user = userEvent.setup();
+
+    mockedApi.getDeck.mockResolvedValue(baseDeck);
+    mockedApi.getCards.mockResolvedValue(initialCards);
+    mockedApi.getTags.mockResolvedValue(noTags);
+
+    renderDeckEdit();
+
+    const cardsTab = await screen.findByRole('tab', { name: 'Cards (1)' });
+    const settingsTab = screen.getByRole('tab', { name: 'Settings' });
+
+    cardsTab.focus();
+    await user.keyboard('{ArrowRight}');
+
+    expect(settingsTab).toHaveFocus();
+    expect(settingsTab).toHaveAttribute('aria-selected', 'true');
+    expect(settingsTab).toHaveAttribute('tabindex', '0');
+    expect(cardsTab).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByLabelText('Deck Name')).toBeInTheDocument();
+  });
+
   it('clears a stale error after a successful deck reload', async () => {
     const updatedDeck: Deck = { ...baseDeck, name: 'Recovered Deck', description: 'Recovered description' };
     const user = userEvent.setup();

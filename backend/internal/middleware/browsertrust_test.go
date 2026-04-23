@@ -62,6 +62,42 @@ func TestBrowserTrustMiddleware_BlocksUnexpectedOrigin(t *testing.T) {
 	}
 }
 
+func TestBrowserTrustMiddleware_AllowsUnsafeRequestFromAllowedRefererWhenOriginMissing(t *testing.T) {
+	middleware := NewBrowserTrustMiddleware([]string{"https://fsrs.ziyang.li"})
+
+	handler := middleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/cards/1", nil)
+	req.Header.Set("Referer", "https://fsrs.ziyang.li/decks/1?tab=cards")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusAccepted)
+	}
+}
+
+func TestBrowserTrustMiddleware_BlocksUnexpectedRefererWhenOriginMissing(t *testing.T) {
+	middleware := NewBrowserTrustMiddleware([]string{"https://fsrs.ziyang.li"})
+
+	handler := middleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/decks", nil)
+	req.Header.Set("Referer", "https://attacker.example/submit")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
 func TestBrowserTrustMiddleware_AllowsNonBrowserClientWithoutOrigin(t *testing.T) {
 	middleware := NewBrowserTrustMiddleware([]string{"https://fsrs.ziyang.li"})
 

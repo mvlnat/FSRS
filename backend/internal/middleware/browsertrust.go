@@ -43,6 +43,16 @@ func (m *BrowserTrustMiddleware) Handler(next http.Handler) http.Handler {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
+		} else if referer := strings.TrimSpace(r.Header.Get("Referer")); referer != "" {
+			normalizedOrigin, ok := normalizeRequestRefererOrigin(referer)
+			if !ok {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+			if _, allowed := m.allowedOrigins[normalizedOrigin]; !allowed {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 		}
 
 		next.ServeHTTP(w, r)
@@ -67,6 +77,20 @@ func normalizeRequestOrigin(origin string) (string, bool) {
 		return "", false
 	}
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", false
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", false
+	}
+
+	return scheme + "://" + strings.ToLower(parsed.Host), true
+}
+
+func normalizeRequestRefererOrigin(referer string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(referer))
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.User != nil {
 		return "", false
 	}
 

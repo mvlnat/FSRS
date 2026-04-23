@@ -56,6 +56,10 @@ func (s *fakeIntegrationAuthEmailSender) SendPasswordResetEmail(_ context.Contex
 	return nil
 }
 
+func (s *fakeIntegrationAuthEmailSender) CheckConfig() error {
+	return nil
+}
+
 func (s *fakeIntegrationAuthEmailSender) mustVerificationToken(t *testing.T, email string) string {
 	t.Helper()
 	return mustExtractTokenFromURL(t, s.verificationURLs[email])

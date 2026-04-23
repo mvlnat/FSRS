@@ -104,6 +104,15 @@ function formatDueCount(total: number): string {
   return `${total} card${total === 1 ? '' : 's'} due`;
 }
 
+function formatCalendarDayLabel(date: Date, total: number, isToday: boolean): string {
+  const parts = [fullDateFormatter.format(date)];
+  if (isToday) {
+    parts.push('today');
+  }
+  parts.push(total > 0 ? formatDueCount(total) : 'No cards due');
+  return parts.join(', ');
+}
+
 function formatReviewCount(value: number): string {
   return value.toLocaleString();
 }
@@ -495,7 +504,8 @@ export function Decks() {
                   className={`due-calendar-day${cell.isCurrentMonth ? '' : ' is-outside-month'}${cell.isToday ? ' is-today' : ''}${selectedDateKey === cell.dateKey ? ' is-selected' : ''}`}
                   data-tone={getCalendarTone(cell.total, maxDueCount)}
                   onClick={() => setSelectedDateKey(cell.dateKey)}
-                  aria-label={`View due cards for ${cell.dateKey}`}
+                  aria-label={formatCalendarDayLabel(cell.date, cell.total, cell.isToday)}
+                  aria-current={cell.isToday ? 'date' : undefined}
                   aria-pressed={selectedDateKey === cell.dateKey}
                 >
                   <span className="due-calendar-day-number">{cell.date.getDate()}</span>

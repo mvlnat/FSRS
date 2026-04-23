@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { CardState, CardWithState } from '../types';
 import * as api from '../api/client';
@@ -64,6 +64,10 @@ function renderStudy() {
 }
 
 describe('Study', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
   it('submits a revealed card only once while the review request is in flight', async () => {
     const pendingReview = deferred<CardState>();
 
@@ -136,6 +140,52 @@ describe('Study', () => {
     await user.click(screen.getByRole('button', { name: /show answer/i }));
 
     expect(screen.queryByRole('link', { name: 'Open Link' })).not.toBeInTheDocument();
+  });
+
+  it('renders safe markdown links with external-link protections', async () => {
+    mockedApi.getStudySession.mockResolvedValueOnce({
+      due_cards: [
+        {
+          ...studyCard,
+          front: '[Reference](https://example.com) and [Bad](javascript:alert(1))',
+        },
+      ],
+      pending_learning_cards: [],
+    });
+
+    renderStudy();
+
+    const safeLink = await screen.findByRole('link', { name: 'Reference' });
+    expect(safeLink).toHaveAttribute('href', 'https://example.com/');
+    expect(safeLink).toHaveAttribute('target', '_blank');
+    expect(safeLink).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(screen.queryByRole('link', { name: 'Bad' })).not.toBeInTheDocument();
+  });
+
+  it('ignores review shortcuts while focus is on interactive elements', async () => {
+    const user = userEvent.setup();
+
+    mockedApi.getStudySession.mockResolvedValueOnce({
+      due_cards: [
+        {
+          ...studyCard,
+          link: 'https://example.com/reference',
+        },
+      ],
+      pending_learning_cards: [],
+    });
+
+    renderStudy();
+
+    await screen.findByText('What is FSRS?');
+    await user.click(screen.getByRole('button', { name: /show answer/i }));
+
+    const link = screen.getByRole('link', { name: 'Open Link' });
+    link.focus();
+    fireEvent.keyDown(link, { key: '1', code: 'Digit1' });
+
+    expect(mockedApi.reviewCard).not.toHaveBeenCalled();
+    expect(screen.getByText('A spaced repetition scheduler.')).toBeInTheDocument();
   });
 
   it('preserves cards that become due while another review is still submitting', async () => {

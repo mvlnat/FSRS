@@ -315,7 +315,31 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
   );
 }
 
+function isInteractiveShortcutTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return target.isContentEditable || Boolean(
+    target.closest(
+      'a[href], button, input, select, summary, textarea, [contenteditable="true"], [role="button"], [role="combobox"], [role="link"], [role="textbox"]',
+    ),
+  );
+}
+
 const markdownComponents: Components = {
+  a({ href, children }) {
+    const safeHref = normalizeOptionalExternalLink(href);
+    if (!safeHref) {
+      return <span>{children}</span>;
+    }
+
+    return (
+      <a href={safeHref} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    );
+  },
   pre({ children }) {
     const [codeNode] = Children.toArray(children);
 
@@ -585,8 +609,7 @@ export function Study() {
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    // Ignore if user is typing in an input
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+    if (isInteractiveShortcutTarget(e.target)) {
       return;
     }
 

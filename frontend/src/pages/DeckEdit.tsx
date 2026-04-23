@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { Deck, CardWithState, Tag } from '../types';
 import * as api from '../api/client';
@@ -22,6 +22,8 @@ export function DeckEdit() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('cards');
+  const cardsTabRef = useRef<HTMLButtonElement | null>(null);
+  const settingsTabRef = useRef<HTMLButtonElement | null>(null);
 
   // Search, sort, and filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -262,6 +264,42 @@ export function DeckEdit() {
     setEditTagIds(card.tags?.map(t => t.id) || []);
   };
 
+  const focusTab = (tab: Tab) => {
+    if (tab === 'cards') {
+      cardsTabRef.current?.focus();
+      return;
+    }
+
+    settingsTabRef.current?.focus();
+  };
+
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, tab: Tab) => {
+    let nextTab: Tab | null = null;
+
+    switch (event.key) {
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        nextTab = tab === 'cards' ? 'settings' : 'cards';
+        break;
+      case 'ArrowRight':
+      case 'ArrowDown':
+        nextTab = tab === 'cards' ? 'settings' : 'cards';
+        break;
+      case 'Home':
+        nextTab = 'cards';
+        break;
+      case 'End':
+        nextTab = 'settings';
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    setActiveTab(nextTab);
+    focusTab(nextTab);
+  };
+
   if (loading) {
     return (
       <div className="deck-edit-container" role="status" aria-live="polite">
@@ -307,23 +345,29 @@ export function DeckEdit() {
       <div className="tabs" role="tablist" aria-label="Deck editor sections">
         <button
           type="button"
+          ref={cardsTabRef}
           id={CARDS_TAB_ID}
           role="tab"
           className={`tab ${activeTab === 'cards' ? 'active' : ''}`}
           aria-selected={activeTab === 'cards'}
           aria-controls={CARDS_PANEL_ID}
+          tabIndex={activeTab === 'cards' ? 0 : -1}
           onClick={() => setActiveTab('cards')}
+          onKeyDown={(event) => handleTabKeyDown(event, 'cards')}
         >
           Cards ({cards.length})
         </button>
         <button
           type="button"
+          ref={settingsTabRef}
           id={SETTINGS_TAB_ID}
           role="tab"
           className={`tab ${activeTab === 'settings' ? 'active' : ''}`}
           aria-selected={activeTab === 'settings'}
           aria-controls={SETTINGS_PANEL_ID}
+          tabIndex={activeTab === 'settings' ? 0 : -1}
           onClick={() => setActiveTab('settings')}
+          onKeyDown={(event) => handleTabKeyDown(event, 'settings')}
         >
           Settings
         </button>

@@ -265,7 +265,7 @@ describe('Decks', () => {
     await screen.findByRole('heading', { name: 'Due Calendar' });
     await screen.findByText('3 cards due this month');
 
-    await user.click(screen.getByRole('button', { name: `View due cards for ${todayKey}` }));
+    await user.click(screen.getByRole('button', { name: /today, 3 cards due/i }));
 
     expect(screen.getByRole('link', { name: 'Biology, 2 cards due' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'History, 1 card due' })).toBeInTheDocument();
