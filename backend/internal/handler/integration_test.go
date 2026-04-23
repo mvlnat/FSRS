@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -27,10 +28,62 @@ import (
 // Run with: go test -tags=integration ./internal/handler/...
 
 var (
-	testDB        *repository.DB
-	testRouter    *chi.Mux
-	testJWTSecret = "test-jwt-secret-for-integration"
+	testDB              *repository.DB
+	testRouter          *chi.Mux
+	testAuthEmailSender *fakeIntegrationAuthEmailSender
+	testJWTSecret       = "test-jwt-secret-for-integration"
 )
+
+type fakeIntegrationAuthEmailSender struct {
+	verificationURLs map[string]string
+	resetURLs        map[string]string
+}
+
+func newFakeIntegrationAuthEmailSender() *fakeIntegrationAuthEmailSender {
+	return &fakeIntegrationAuthEmailSender{
+		verificationURLs: make(map[string]string),
+		resetURLs:        make(map[string]string),
+	}
+}
+
+func (s *fakeIntegrationAuthEmailSender) SendVerificationEmail(_ context.Context, email, verificationURL string) error {
+	s.verificationURLs[email] = verificationURL
+	return nil
+}
+
+func (s *fakeIntegrationAuthEmailSender) SendPasswordResetEmail(_ context.Context, email, resetURL string) error {
+	s.resetURLs[email] = resetURL
+	return nil
+}
+
+func (s *fakeIntegrationAuthEmailSender) mustVerificationToken(t *testing.T, email string) string {
+	t.Helper()
+	return mustExtractTokenFromURL(t, s.verificationURLs[email])
+}
+
+func (s *fakeIntegrationAuthEmailSender) mustResetToken(t *testing.T, email string) string {
+	t.Helper()
+	return mustExtractTokenFromURL(t, s.resetURLs[email])
+}
+
+func mustExtractTokenFromURL(t *testing.T, rawURL string) string {
+	t.Helper()
+	if rawURL == "" {
+		t.Fatal("expected email URL to be recorded")
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse URL: %v", err)
+	}
+
+	token := parsed.Query().Get("token")
+	if token == "" {
+		t.Fatalf("expected token in URL %q", rawURL)
+	}
+
+	return token
+}
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
@@ -54,6 +107,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Setup router
+	testAuthEmailSender = newFakeIntegrationAuthEmailSender()
 	testRouter = setupTestRouter()
 
 	// Run tests
@@ -68,6 +122,7 @@ func TestMain(m *testing.M) {
 func setupTestSchema(ctx context.Context) error {
 	if _, err := testDB.Pool.Exec(ctx, `
 		DROP TABLE IF EXISTS auth_throttles CASCADE;
+		DROP TABLE IF EXISTS auth_email_tokens CASCADE;
 		DROP TABLE IF EXISTS reviews CASCADE;
 		DROP TABLE IF EXISTS card_states CASCADE;
 		DROP TABLE IF EXISTS card_tags CASCADE;
@@ -86,6 +141,7 @@ func setupTestSchema(ctx context.Context) error {
 func cleanupTestDB(ctx context.Context) {
 	testDB.Pool.Exec(ctx, `
 		DROP TABLE IF EXISTS auth_throttles CASCADE;
+		DROP TABLE IF EXISTS auth_email_tokens CASCADE;
 		DROP TABLE IF EXISTS reviews CASCADE;
 		DROP TABLE IF EXISTS card_states CASCADE;
 		DROP TABLE IF EXISTS card_tags CASCADE;
@@ -99,13 +155,21 @@ func cleanupTestDB(ctx context.Context) {
 
 func setupTestRouter() *chi.Mux {
 	userRepo := repository.NewUserRepository(testDB)
+	authEmailTokenRepo := repository.NewAuthEmailTokenRepository(testDB)
 	authThrottleRepo := repository.NewAuthThrottleRepository(testDB)
 	deckRepo := repository.NewDeckRepository(testDB)
 	cardRepo := repository.NewCardRepository(testDB)
 	tagRepo := repository.NewTagRepository(testDB)
 	fsrsService := service.NewFSRSService()
 
-	authHandler := handler.NewAuthHandler(userRepo, testJWTSecret, false)
+	authHandler := handler.NewAuthHandler(
+		userRepo,
+		authEmailTokenRepo,
+		testAuthEmailSender,
+		testJWTSecret,
+		false,
+		"http://localhost:5173",
+	)
 	authHandler.SetAuthThrottle(authThrottleRepo)
 	deckHandler := handler.NewDeckHandler(deckRepo, cardRepo)
 	cardHandler := handler.NewCardHandler(cardRepo, deckRepo, tagRepo)
@@ -128,6 +192,10 @@ func setupTestRouter() *chi.Mux {
 		r.Use(authRateLimiter.Handler)
 		r.Post("/api/auth/register", authHandler.Register)
 		r.Post("/api/auth/login", authHandler.Login)
+		r.Post("/api/auth/verify-email/resend", authHandler.ResendVerificationEmail)
+		r.Post("/api/auth/verify-email/confirm", authHandler.ConfirmEmailVerification)
+		r.Post("/api/auth/password-reset/request", authHandler.RequestPasswordReset)
+		r.Post("/api/auth/password-reset/confirm", authHandler.ConfirmPasswordReset)
 	})
 
 	// Protected routes
@@ -213,10 +281,58 @@ func loginTestUser(t *testing.T, email, password string) *http.Cookie {
 	return authCookie
 }
 
+func verifyTestUser(t *testing.T, email string) {
+	t.Helper()
+
+	token := testAuthEmailSender.mustVerificationToken(t, email)
+	body := `{"token":"` + token + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/verify-email/confirm", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify email: got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func requestPasswordReset(t *testing.T, email string) {
+	t.Helper()
+
+	body := `{"email":"` + email + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/password-reset/request", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("password reset request: got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+}
+
+func confirmPasswordReset(t *testing.T, email, password string) {
+	t.Helper()
+
+	token := testAuthEmailSender.mustResetToken(t, email)
+	body := `{"token":"` + token + `","password":"` + password + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/password-reset/confirm", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("password reset confirm: got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
 func registerAndLoginTestUser(t *testing.T, email, password string) *http.Cookie {
 	t.Helper()
 
 	registerTestUser(t, email, password)
+	verifyTestUser(t, email)
 	return loginTestUser(t, email, password)
 }
 
@@ -237,6 +353,17 @@ func TestIntegration_AuthFlow(t *testing.T) {
 		t.Fatal("did not expect auth cookie after register")
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("login before verification: got status %d, want %d, body: %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+
+	verifyTestUser(t, "test@example.com")
 	authCookie := loginTestUser(t, "test@example.com", "password123")
 
 	// Get current user
@@ -308,16 +435,8 @@ func TestIntegration_AuthEmailNormalization(t *testing.T) {
 		t.Fatalf("register: got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
 	}
 
-	body = `{"email":"mixed.case@EXAMPLE.com","password":"password123"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	rec = httptest.NewRecorder()
-
-	testRouter.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("login: got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
-	}
+	verifyTestUser(t, "mixed.case@example.com")
+	_ = loginTestUser(t, "mixed.case@EXAMPLE.com", "password123")
 
 	body = `{"email":"MIXED.CASE@example.com","password":"password123"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader([]byte(body)))
@@ -329,6 +448,39 @@ func TestIntegration_AuthEmailNormalization(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("duplicate register: got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
 	}
+}
+
+func TestIntegration_PasswordResetInvalidatesSessions(t *testing.T) {
+	authCookie := registerAndLoginTestUser(t, "reset@example.com", "password123")
+
+	requestPasswordReset(t, "reset@example.com")
+	confirmPasswordReset(t, "reset@example.com", "newpassword123")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.AddCookie(authCookie)
+	rec := httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("old session after reset: got status %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	req = httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/login",
+		bytes.NewReader([]byte(`{"email":"reset@example.com","password":"password123"}`)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+
+	testRouter.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("login with old password: got status %d, want %d, body: %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+
+	_ = loginTestUser(t, "reset@example.com", "newpassword123")
 }
 
 func TestIntegration_DeckCRUD(t *testing.T) {

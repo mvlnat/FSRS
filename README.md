@@ -124,6 +124,33 @@ git pull --ff-only
 git merge --ff-only <change-branch>
 ```
 
+### One-command Release Script
+
+The repo now includes [`scripts/release-prod.sh`](./scripts/release-prod.sh) to run the end-to-end release flow:
+
+- commit current changes if the worktree is dirty
+- push the current branch
+- fast-forward merge into `main`
+- run backend/frontend checks
+- push `main`
+- build amd64 Docker images locally
+- upload image archives plus `docker-compose.prod.yml` and `nginx.conf`
+- restart the production stack on `root@5.78.201.47`
+- verify the remote containers and the live site
+
+Example:
+
+```bash
+cd /Users/ziyangli/Coding/fsrs
+scripts/release-prod.sh --message "Add email verification and password reset"
+```
+
+Useful flags:
+
+- `--skip-tests` to skip backend/frontend checks
+- `--skip-verify` to skip the remote/site verification step
+- `--host`, `--app-dir`, and `--domain` to override the production defaults
+
 ## Production Notes
 
 - `docker-compose.yml` assumes HTTPS termination and mounted certificates at `./certs/fullchain.pem` and `./certs/privkey.pem`.

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,6 +77,7 @@ func main() {
 
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db)
+	authEmailTokenRepo := repository.NewAuthEmailTokenRepository(db)
 	authThrottleRepo := repository.NewAuthThrottleRepository(db)
 	deckRepo := repository.NewDeckRepository(db)
 	cardRepo := repository.NewCardRepository(db)
@@ -85,7 +87,16 @@ func main() {
 	fsrsService := service.NewFSRSService()
 
 	// Initialize handlers
-	authHandler := handler.NewAuthHandler(userRepo, jwtSecret, secureCookies)
+	appBaseURL, err := getAppBaseURL(environment)
+	if err != nil {
+		log.Fatalf("Invalid APP_BASE_URL: %v", err)
+	}
+	authEmailSender, err := newAuthEmailSender(environment)
+	if err != nil {
+		log.Fatalf("Invalid email sender configuration: %v", err)
+	}
+
+	authHandler := handler.NewAuthHandler(userRepo, authEmailTokenRepo, authEmailSender, jwtSecret, secureCookies, appBaseURL)
 	authHandler.SetAuthThrottle(authThrottleRepo)
 	deckHandler := handler.NewDeckHandler(deckRepo, cardRepo)
 	cardHandler := handler.NewCardHandler(cardRepo, deckRepo, tagRepo)
@@ -124,6 +135,10 @@ func main() {
 		r.Use(authRateLimiter.Handler)
 		r.Post("/api/auth/register", authHandler.Register)
 		r.Post("/api/auth/login", authHandler.Login)
+		r.Post("/api/auth/verify-email/resend", authHandler.ResendVerificationEmail)
+		r.Post("/api/auth/verify-email/confirm", authHandler.ConfirmEmailVerification)
+		r.Post("/api/auth/password-reset/request", authHandler.RequestPasswordReset)
+		r.Post("/api/auth/password-reset/confirm", authHandler.ConfirmPasswordReset)
 	})
 
 	// Protected routes
@@ -191,6 +206,61 @@ func getAllowedOrigins(environment string) ([]string, error) {
 	}
 
 	return parseAllowedOrigins(origins)
+}
+
+func getAppBaseURL(environment string) (string, error) {
+	appBaseURL := os.Getenv("APP_BASE_URL")
+	if appBaseURL == "" {
+		if environment == "production" {
+			appBaseURL = "https://fsrs.ziyang.li"
+		} else {
+			appBaseURL = "http://localhost:5173"
+		}
+	}
+
+	normalized, err := normalizeOrigin(appBaseURL)
+	if err != nil {
+		return "", err
+	}
+
+	return normalized, nil
+}
+
+func newAuthEmailSender(environment string) (interface {
+	SendVerificationEmail(ctx context.Context, email, verificationURL string) error
+	SendPasswordResetEmail(ctx context.Context, email, resetURL string) error
+}, error) {
+	smtpHost := strings.TrimSpace(os.Getenv("SMTP_HOST"))
+	if smtpHost == "" {
+		if environment == "production" {
+			return nil, fmt.Errorf("SMTP_HOST is required in production")
+		}
+
+		log.Println("WARNING: SMTP is not configured. Auth email links will be logged locally.")
+		return handler.NewLogAuthEmailSender(log.Default()), nil
+	}
+
+	smtpPort := 587
+	if value := strings.TrimSpace(os.Getenv("SMTP_PORT")); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid SMTP_PORT %q", value)
+		}
+		smtpPort = parsed
+	}
+
+	sender, err := handler.NewSMTPAuthEmailSender(
+		smtpHost,
+		smtpPort,
+		os.Getenv("SMTP_USERNAME"),
+		os.Getenv("SMTP_PASSWORD"),
+		os.Getenv("SMTP_FROM"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return sender, nil
 }
 
 func parseAllowedOrigins(value string) ([]string, error) {

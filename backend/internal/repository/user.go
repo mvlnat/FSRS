@@ -43,9 +43,9 @@ func (r *UserRepository) Create(ctx context.Context, email, passwordHash string)
 	user := &model.User{}
 	err = r.db.Pool.QueryRow(ctx,
 		`INSERT INTO users (email, password_hash) VALUES ($1, $2)
-		 RETURNING id, email, password_hash, token_version, created_at`,
+		 RETURNING id, email, password_hash, token_version, email_verified_at, created_at`,
 		email, passwordHash,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.TokenVersion, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.TokenVersion, &user.EmailVerifiedAt, &user.CreatedAt)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -62,9 +62,11 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.U
 
 	user := &model.User{}
 	err := r.db.Pool.QueryRow(ctx,
-		`SELECT id, email, password_hash, token_version, created_at FROM users WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1))`,
+		`SELECT id, email, password_hash, token_version, email_verified_at, created_at
+		 FROM users
+		 WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1))`,
 		email,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.TokenVersion, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.TokenVersion, &user.EmailVerifiedAt, &user.CreatedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -78,9 +80,11 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.U
 func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
 	user := &model.User{}
 	err := r.db.Pool.QueryRow(ctx,
-		`SELECT id, email, password_hash, token_version, created_at FROM users WHERE id = $1`,
+		`SELECT id, email, password_hash, token_version, email_verified_at, created_at
+		 FROM users
+		 WHERE id = $1`,
 		id,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.TokenVersion, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.TokenVersion, &user.EmailVerifiedAt, &user.CreatedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -97,6 +101,38 @@ func (r *UserRepository) IncrementTokenVersion(ctx context.Context, id uuid.UUID
 		SET token_version = token_version + 1
 		WHERE id = $1
 	`, id)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
+	result, err := r.db.Pool.Exec(ctx, `
+		UPDATE users
+		SET email_verified_at = COALESCE(email_verified_at, NOW())
+		WHERE id = $1
+	`, id)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) ResetPassword(ctx context.Context, id uuid.UUID, passwordHash string) error {
+	result, err := r.db.Pool.Exec(ctx, `
+		UPDATE users
+		SET password_hash = $2,
+		    token_version = token_version + 1,
+		    email_verified_at = COALESCE(email_verified_at, NOW())
+		WHERE id = $1
+	`, id, passwordHash)
 	if err != nil {
 		return err
 	}

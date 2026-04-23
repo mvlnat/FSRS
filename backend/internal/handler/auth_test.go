@@ -19,10 +19,19 @@ import (
 )
 
 type fakeAuthUserStore struct {
-	user *model.User
+	user                *model.User
+	createFn            func(ctx context.Context, email, passwordHash string) (*model.User, error)
+	getByEmailFn        func(ctx context.Context, email string) (*model.User, error)
+	getByIDFn           func(ctx context.Context, id uuid.UUID) (*model.User, error)
+	incrementTokenFn    func(ctx context.Context, id uuid.UUID) error
+	markEmailVerifiedFn func(ctx context.Context, id uuid.UUID) error
+	resetPasswordFn     func(ctx context.Context, id uuid.UUID, passwordHash string) error
 }
 
-func (f fakeAuthUserStore) Create(_ context.Context, email, passwordHash string) (*model.User, error) {
+func (f fakeAuthUserStore) Create(ctx context.Context, email, passwordHash string) (*model.User, error) {
+	if f.createFn != nil {
+		return f.createFn(ctx, email, passwordHash)
+	}
 	return &model.User{
 		ID:           uuid.New(),
 		Email:        email,
@@ -30,19 +39,106 @@ func (f fakeAuthUserStore) Create(_ context.Context, email, passwordHash string)
 	}, nil
 }
 
-func (f fakeAuthUserStore) GetByEmail(_ context.Context, email string) (*model.User, error) {
+func (f fakeAuthUserStore) GetByEmail(ctx context.Context, email string) (*model.User, error) {
+	if f.getByEmailFn != nil {
+		return f.getByEmailFn(ctx, email)
+	}
 	if f.user != nil && f.user.Email == email {
 		return f.user, nil
 	}
 	return nil, repository.ErrNotFound
 }
 
-func (f fakeAuthUserStore) GetByID(_ context.Context, _ uuid.UUID) (*model.User, error) {
+func (f fakeAuthUserStore) GetByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
+	if f.getByIDFn != nil {
+		return f.getByIDFn(ctx, id)
+	}
+	if f.user == nil {
+		return nil, repository.ErrNotFound
+	}
 	return f.user, nil
 }
 
-func (f fakeAuthUserStore) IncrementTokenVersion(_ context.Context, _ uuid.UUID) error {
+func (f fakeAuthUserStore) IncrementTokenVersion(ctx context.Context, id uuid.UUID) error {
+	if f.incrementTokenFn != nil {
+		return f.incrementTokenFn(ctx, id)
+	}
 	return nil
+}
+
+func (f fakeAuthUserStore) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
+	if f.markEmailVerifiedFn != nil {
+		return f.markEmailVerifiedFn(ctx, id)
+	}
+	if f.user == nil || f.user.ID != id {
+		return repository.ErrNotFound
+	}
+	now := time.Now()
+	f.user.EmailVerifiedAt = &now
+	return nil
+}
+
+func (f fakeAuthUserStore) ResetPassword(ctx context.Context, id uuid.UUID, passwordHash string) error {
+	if f.resetPasswordFn != nil {
+		return f.resetPasswordFn(ctx, id, passwordHash)
+	}
+	if f.user == nil || f.user.ID != id {
+		return repository.ErrNotFound
+	}
+	now := time.Now()
+	f.user.PasswordHash = passwordHash
+	f.user.TokenVersion++
+	f.user.EmailVerifiedAt = &now
+	return nil
+}
+
+type fakeAuthEmailTokenStore struct {
+	createFn  func(ctx context.Context, userID uuid.UUID, purpose repository.AuthEmailTokenPurpose, tokenHash string, expiresAt time.Time) error
+	consumeFn func(ctx context.Context, purpose repository.AuthEmailTokenPurpose, tokenHash string, now time.Time) (uuid.UUID, error)
+}
+
+func (f fakeAuthEmailTokenStore) Create(
+	ctx context.Context,
+	userID uuid.UUID,
+	purpose repository.AuthEmailTokenPurpose,
+	tokenHash string,
+	expiresAt time.Time,
+) error {
+	if f.createFn == nil {
+		return nil
+	}
+	return f.createFn(ctx, userID, purpose, tokenHash, expiresAt)
+}
+
+func (f fakeAuthEmailTokenStore) Consume(
+	ctx context.Context,
+	purpose repository.AuthEmailTokenPurpose,
+	tokenHash string,
+	now time.Time,
+) (uuid.UUID, error) {
+	if f.consumeFn == nil {
+		return uuid.Nil, repository.ErrNotFound
+	}
+	return f.consumeFn(ctx, purpose, tokenHash, now)
+}
+
+type fakeAuthEmailSender struct {
+	sendVerificationEmailFn  func(ctx context.Context, email, verificationURL string) error
+	sendPasswordResetEmailFn func(ctx context.Context, email, resetURL string) error
+}
+
+func (f fakeAuthEmailSender) SendVerificationEmail(ctx context.Context, email, verificationURL string) error {
+	if f.sendVerificationEmailFn == nil {
+		return nil
+	}
+	return f.sendVerificationEmailFn(ctx, email, verificationURL)
+}
+
+func (f fakeAuthEmailSender) SendPasswordResetEmail(ctx context.Context, email, resetURL string) error {
+	if f.sendPasswordResetEmailFn == nil {
+		return nil
+	}
+	return f.sendPasswordResetEmailFn(ctx, email, resetURL)
 }
 
 type fakeHandlerAuthThrottle struct {
@@ -156,8 +252,8 @@ func TestAuthHandler_Login_Validation(t *testing.T) {
 	}
 
 	h := &AuthHandler{
-		userRepo:   fakeAuthUserStore{},
-		jwtSecret:  []byte("test-secret"),
+		userRepo:  fakeAuthUserStore{},
+		jwtSecret: []byte("test-secret"),
 		authThrottle: fakeHandlerAuthThrottle{
 			allowFn: func(_ context.Context, _ string, _ string, _ int, _ time.Duration, _ time.Duration) (bool, time.Duration, error) {
 				t.Fatal("expected login validation to reject before throttle lookup")
@@ -291,6 +387,7 @@ func TestAuthHandler_Login_ResetsEmailThrottleOnSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateFromPassword: %v", err)
 	}
+	verifiedAt := time.Now()
 
 	var resetScope string
 	var resetKey string
@@ -298,10 +395,11 @@ func TestAuthHandler_Login_ResetsEmailThrottleOnSuccess(t *testing.T) {
 	h := &AuthHandler{
 		userRepo: fakeAuthUserStore{
 			user: &model.User{
-				ID:           uuid.New(),
-				Email:        "test@example.com",
-				PasswordHash: string(passwordHash),
-				TokenVersion: 3,
+				ID:              uuid.New(),
+				Email:           "test@example.com",
+				PasswordHash:    string(passwordHash),
+				TokenVersion:    3,
+				EmailVerifiedAt: &verifiedAt,
 			},
 		},
 		jwtSecret: []byte("test-secret"),
@@ -335,6 +433,235 @@ func TestAuthHandler_Login_ResetsEmailThrottleOnSuccess(t *testing.T) {
 	}
 	if resetKey != "test@example.com" {
 		t.Fatalf("reset key = %q, want %q", resetKey, "test@example.com")
+	}
+}
+
+func TestAuthHandler_Login_RejectsUnverifiedEmailAfterValidPassword(t *testing.T) {
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("GenerateFromPassword: %v", err)
+	}
+
+	var resetCalled bool
+
+	h := &AuthHandler{
+		userRepo: fakeAuthUserStore{
+			user: &model.User{
+				ID:           uuid.New(),
+				Email:        "test@example.com",
+				PasswordHash: string(passwordHash),
+				TokenVersion: 2,
+			},
+		},
+		jwtSecret: []byte("test-secret"),
+		authThrottle: fakeHandlerAuthThrottle{
+			allowFn: func(_ context.Context, _ string, _ string, _ int, _ time.Duration, _ time.Duration) (bool, time.Duration, error) {
+				return true, 0, nil
+			},
+			resetFn: func(_ context.Context, scope string, key string) error {
+				if scope != loginEmailScope || key != "test@example.com" {
+					t.Fatalf("unexpected reset scope/key: %s %s", scope, key)
+				}
+				resetCalled = true
+				return nil
+			},
+		},
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/login",
+		bytes.NewReader([]byte(`{"email":"test@example.com","password":"password123"}`)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("got status %d, want %d", rec.Code, http.StatusForbidden)
+	}
+	if !strings.Contains(rec.Body.String(), "Email not verified") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+	if !resetCalled {
+		t.Fatal("expected login throttle reset after correct password")
+	}
+}
+
+func TestAuthHandler_Register_SendsVerificationEmail(t *testing.T) {
+	userID := uuid.New()
+	var sentEmail string
+	var verificationURL string
+	var storedPurpose repository.AuthEmailTokenPurpose
+	var storedHash string
+
+	h := &AuthHandler{
+		userRepo: fakeAuthUserStore{
+			createFn: func(_ context.Context, email, passwordHash string) (*model.User, error) {
+				if email != "test@example.com" {
+					t.Fatalf("email = %q, want test@example.com", email)
+				}
+				if passwordHash == "" || passwordHash == "password123" {
+					t.Fatal("expected password hash to be generated")
+				}
+				return &model.User{ID: userID, Email: email, PasswordHash: passwordHash}, nil
+			},
+		},
+		emailTokenRepo: fakeAuthEmailTokenStore{
+			createFn: func(_ context.Context, gotUserID uuid.UUID, purpose repository.AuthEmailTokenPurpose, tokenHash string, expiresAt time.Time) error {
+				if gotUserID != userID {
+					t.Fatalf("userID = %s, want %s", gotUserID, userID)
+				}
+				storedPurpose = purpose
+				storedHash = tokenHash
+				if !expiresAt.After(time.Now()) {
+					t.Fatal("expected token expiry in the future")
+				}
+				return nil
+			},
+		},
+		emailSender: fakeAuthEmailSender{
+			sendVerificationEmailFn: func(_ context.Context, email, url string) error {
+				sentEmail = email
+				verificationURL = url
+				return nil
+			},
+		},
+		appBaseURL: "http://localhost:5173",
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/register",
+		bytes.NewReader([]byte(`{"email":"Test@example.com","password":"password123"}`)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Register(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("got status %d, want %d, body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	if sentEmail != "test@example.com" {
+		t.Fatalf("sent email = %q, want %q", sentEmail, "test@example.com")
+	}
+	if storedPurpose != repository.AuthEmailTokenPurposeEmailVerification {
+		t.Fatalf("stored purpose = %q", storedPurpose)
+	}
+	if len(storedHash) != 64 {
+		t.Fatalf("expected sha256 hex hash, got %q", storedHash)
+	}
+	if !strings.HasPrefix(verificationURL, "http://localhost:5173/verify-email?token=") {
+		t.Fatalf("unexpected verification URL: %s", verificationURL)
+	}
+}
+
+func TestAuthHandler_ConfirmEmailVerification_ConsumesTokenAndMarksUserVerified(t *testing.T) {
+	userID := uuid.New()
+	var markedUserID uuid.UUID
+
+	h := &AuthHandler{
+		userRepo: fakeAuthUserStore{
+			markEmailVerifiedFn: func(_ context.Context, id uuid.UUID) error {
+				markedUserID = id
+				return nil
+			},
+		},
+		emailTokenRepo: fakeAuthEmailTokenStore{
+			consumeFn: func(_ context.Context, purpose repository.AuthEmailTokenPurpose, tokenHash string, now time.Time) (uuid.UUID, error) {
+				if purpose != repository.AuthEmailTokenPurposeEmailVerification {
+					t.Fatalf("purpose = %q", purpose)
+				}
+				if len(tokenHash) != 64 {
+					t.Fatalf("expected sha256 hex hash, got %q", tokenHash)
+				}
+				if now.IsZero() {
+					t.Fatal("expected current time")
+				}
+				return userID, nil
+			},
+		},
+		emailSender: fakeAuthEmailSender{},
+		appBaseURL:  "http://localhost:5173",
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/verify-email/confirm",
+		bytes.NewReader([]byte(`{"token":"abc123"}`)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.ConfirmEmailVerification(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if markedUserID != userID {
+		t.Fatalf("marked userID = %s, want %s", markedUserID, userID)
+	}
+}
+
+func TestAuthHandler_ConfirmPasswordReset_UpdatesPasswordAndClearsCookie(t *testing.T) {
+	userID := uuid.New()
+	var resetUserID uuid.UUID
+	var resetPasswordHash string
+
+	h := &AuthHandler{
+		userRepo: fakeAuthUserStore{
+			resetPasswordFn: func(_ context.Context, id uuid.UUID, passwordHash string) error {
+				resetUserID = id
+				resetPasswordHash = passwordHash
+				return nil
+			},
+		},
+		emailTokenRepo: fakeAuthEmailTokenStore{
+			consumeFn: func(_ context.Context, purpose repository.AuthEmailTokenPurpose, tokenHash string, now time.Time) (uuid.UUID, error) {
+				if purpose != repository.AuthEmailTokenPurposePasswordReset {
+					t.Fatalf("purpose = %q", purpose)
+				}
+				if len(tokenHash) != 64 {
+					t.Fatalf("expected sha256 hex hash, got %q", tokenHash)
+				}
+				return userID, nil
+			},
+		},
+		emailSender: fakeAuthEmailSender{},
+		appBaseURL:  "http://localhost:5173",
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/password-reset/confirm",
+		bytes.NewReader([]byte(`{"token":"reset-token","password":"password123"}`)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.ConfirmPasswordReset(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if resetUserID != userID {
+		t.Fatalf("reset userID = %s, want %s", resetUserID, userID)
+	}
+	if resetPasswordHash == "" || resetPasswordHash == "password123" {
+		t.Fatal("expected password to be hashed")
+	}
+
+	var tokenCookie *http.Cookie
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == middleware.LegacyTokenCookieName {
+			tokenCookie = cookie
+			break
+		}
+	}
+	if tokenCookie == nil || tokenCookie.MaxAge != -1 {
+		t.Fatalf("expected auth cookie to be cleared, got %#v", tokenCookie)
 	}
 }
 
