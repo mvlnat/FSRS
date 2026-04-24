@@ -420,6 +420,22 @@ function mergePendingReviews(currentQueue: PendingReview[], incomingQueue: Pendi
   return [...queueByCardID.values()].sort((a, b) => a.dueAt - b.dueAt);
 }
 
+function countNewSessionCards(
+  currentCards: CardWithState[],
+  currentQueue: PendingReview[],
+  dueCards: CardWithState[],
+  pendingQueue: PendingReview[],
+): number {
+  const trackedCardIds = new Set([
+    ...currentCards.map((card) => card.id),
+    ...currentQueue.map((entry) => entry.card.id),
+  ]);
+
+  return [...dueCards, ...pendingQueue.map((entry) => entry.card)]
+    .filter((card) => !trackedCardIds.has(card.id))
+    .length;
+}
+
 function formatCountdown(ms: number): string {
   const totalSeconds = Math.max(1, Math.ceil(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -450,13 +466,21 @@ export function Study() {
   const pendingSubmissionCountRef = useRef(0);
   const pendingSubmissionCardIDsRef = useRef(new Set<string>());
   const backgroundRefreshInFlightRef = useRef(false);
+  const sessionGenerationRef = useRef(0);
 
-  const loadStudySession = useCallback(async (isInitial = false) => {
+  const loadStudySession = useCallback(async (isInitial = false, expectedGeneration = sessionGenerationRef.current) => {
     if (!deckId) return;
     try {
       const session: StudySession = await api.getStudySession(deckId);
+      if (expectedGeneration !== sessionGenerationRef.current) {
+        return;
+      }
+
       const sessionPendingReviews = toPendingReviews(session.pending_learning_cards);
       const dueCardIDs = new Set(session.due_cards.map((card) => card.id));
+      const addedSessionCards = isInitial
+        ? 0
+        : countNewSessionCards(cardsRef.current, pendingReviewsRef.current, session.due_cards, sessionPendingReviews);
 
       if (isInitial) {
         cardsRef.current = session.due_cards;
@@ -482,13 +506,46 @@ export function Study() {
       if (isInitial) {
         setTotalInSession(session.due_cards.length + sessionPendingReviews.length);
         setCompleted(0);
+      } else if (addedSessionCards > 0) {
+        setTotalInSession((count) => count + addedSessionCards);
       }
     } catch (err) {
+      if (expectedGeneration !== sessionGenerationRef.current) {
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to load cards');
     } finally {
-      setLoading(false);
+      if (expectedGeneration === sessionGenerationRef.current) {
+        setLoading(false);
+      }
     }
   }, [deckId]);
+
+  const startFreshStudySession = useCallback(() => {
+    sessionGenerationRef.current += 1;
+    const nextGeneration = sessionGenerationRef.current;
+
+    cardsRef.current = [];
+    pendingReviewsRef.current = [];
+    pendingSubmissionCountRef.current = 0;
+    pendingSubmissionCardIDsRef.current = new Set<string>();
+    backgroundRefreshInFlightRef.current = false;
+
+    setCards([]);
+    setPendingReviews([]);
+    setShowBack(false);
+    setLoading(true);
+    setError('');
+    setCompleted(0);
+    setTotalInSession(0);
+    setNow(Date.now());
+    setPendingSubmissionCount(0);
+    setRefreshingSession(false);
+
+    if (deckId) {
+      void loadStudySession(true, nextGeneration);
+    }
+  }, [deckId, loadStudySession]);
 
   const maybeRefreshEmptySession = useCallback(() => {
     if (backgroundRefreshInFlightRef.current || pendingSubmissionCountRef.current > 0) {
@@ -507,8 +564,8 @@ export function Study() {
   }, [loadStudySession]);
 
   useEffect(() => {
-    if (deckId) loadStudySession(true);
-  }, [deckId, loadStudySession]);
+    startFreshStudySession();
+  }, [startFreshStudySession]);
 
   useEffect(() => {
     cardsRef.current = cards;
@@ -554,6 +611,7 @@ export function Study() {
     const [card] = cards;
     if (!card || pendingSubmissionCardIDsRef.current.has(card.id)) return;
 
+    const reviewGeneration = sessionGenerationRef.current;
     pendingSubmissionCardIDsRef.current.add(card.id);
     pendingSubmissionCountRef.current += 1;
     setPendingSubmissionCount(pendingSubmissionCountRef.current);
@@ -571,6 +629,9 @@ export function Study() {
 
       try {
         const nextState = await api.reviewCard(card.id, rating);
+        if (reviewGeneration !== sessionGenerationRef.current) {
+          return;
+        }
         const requeueCurrentCard = shouldRequeueLearningCard(nextState);
 
         if (requeueCurrentCard) {
@@ -587,6 +648,9 @@ export function Study() {
           shouldTriggerSessionRefresh = true;
         }
       } catch (err) {
+        if (reviewGeneration !== sessionGenerationRef.current) {
+          return;
+        }
         setCompleted((count) => Math.max(0, count - 1));
         setError(err instanceof Error ? err.message : 'Failed to submit review');
         shouldTriggerSessionRefresh = true;
@@ -596,12 +660,14 @@ export function Study() {
           return nextCards;
         });
       } finally {
-        pendingSubmissionCardIDsRef.current.delete(card.id);
-        pendingSubmissionCountRef.current = Math.max(0, pendingSubmissionCountRef.current - 1);
-        setPendingSubmissionCount(pendingSubmissionCountRef.current);
+        if (reviewGeneration === sessionGenerationRef.current) {
+          pendingSubmissionCardIDsRef.current.delete(card.id);
+          pendingSubmissionCountRef.current = Math.max(0, pendingSubmissionCountRef.current - 1);
+          setPendingSubmissionCount(pendingSubmissionCountRef.current);
 
-        if (shouldTriggerSessionRefresh) {
-          maybeRefreshEmptySession();
+          if (shouldTriggerSessionRefresh) {
+            maybeRefreshEmptySession();
+          }
         }
       }
     })();
@@ -648,9 +714,10 @@ export function Study() {
   const isComplete = !currentCard && pendingReviews.length === 0 && pendingSubmissionCount === 0 && !refreshingSession && error === '';
   const nextReviewCountdown = nextPendingReview ? formatCountdown(nextPendingReview.dueAt - now) : null;
   const safeCurrentCardLink = currentCard ? normalizeOptionalExternalLink(currentCard.link) : null;
+  const studyContainerClassName = currentCard ? 'study-container study-container-review' : 'study-container';
 
   return (
-    <div className="study-container">
+    <div className={studyContainerClassName}>
       <button onClick={() => navigate('/')} className="back-btn">
         Back to Decks
       </button>
@@ -689,7 +756,7 @@ export function Study() {
         <div className="study-complete" role="alert">
           <h2>Unable to Load Session</h2>
           <p>{error}</p>
-          <button onClick={() => void loadStudySession(true)}>Retry</button>
+          <button onClick={startFreshStudySession}>Retry</button>
         </div>
       ) : isComplete ? (
         <div className="study-complete">

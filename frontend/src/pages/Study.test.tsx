@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { CardState, CardWithState } from '../types';
 import * as api from '../api/client';
 import { Study } from './Study';
@@ -63,6 +63,18 @@ function renderStudy() {
   );
 }
 
+function renderStudyWithNavigation() {
+  return render(
+    <MemoryRouter initialEntries={['/study/deck-1']}>
+      <Link to="/study/deck-1">Deck 1</Link>
+      <Link to="/study/deck-2">Deck 2</Link>
+      <Routes>
+        <Route path="/study/:deckId" element={<Study />} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
 describe('Study', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -112,6 +124,86 @@ describe('Study', () => {
     });
 
     await screen.findByText('Session Complete!');
+  });
+
+  it('uses the wider review layout while an active card is on screen', async () => {
+    mockedApi.getStudySession.mockResolvedValueOnce({
+      due_cards: [studyCard],
+      pending_learning_cards: [],
+    });
+
+    const { container } = renderStudy();
+
+    await screen.findByText('What is FSRS?');
+
+    expect(container.querySelector('.study-container')).toHaveClass('study-container-review');
+  });
+
+  it('updates session totals when a background refresh adds more due cards', async () => {
+    mockedApi.getStudySession
+      .mockResolvedValueOnce({
+        due_cards: [studyCard],
+        pending_learning_cards: [],
+      })
+      .mockResolvedValueOnce({
+        due_cards: [followUpCard],
+        pending_learning_cards: [],
+      });
+    mockedApi.reviewCard.mockResolvedValueOnce({
+      id: 'state-1',
+      card_id: studyCard.id,
+      due: '2026-04-15T00:00:00Z',
+      stability: 1,
+      difficulty: 1,
+      elapsed_days: 1,
+      scheduled_days: 1,
+      reps: 1,
+      lapses: 0,
+      state: 2,
+      last_review: '2026-04-14T00:00:00Z',
+    });
+
+    renderStudy();
+
+    await screen.findByText('What is FSRS?');
+    fireEvent.click(screen.getByRole('button', { name: /show answer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /good/i }));
+
+    await waitFor(() => {
+      expect(mockedApi.getStudySession).toHaveBeenCalledTimes(2);
+    });
+
+    await screen.findByText('What is spaced repetition?');
+    expect(screen.getByText('Completed: 1/2')).toBeInTheDocument();
+    expect(screen.getByText('Due Now: 1')).toBeInTheDocument();
+  });
+
+  it('ignores stale session loads after navigating to a different deck', async () => {
+    const initialLoad = deferred<{ due_cards: CardWithState[]; pending_learning_cards: CardWithState[] }>();
+    const user = userEvent.setup();
+
+    mockedApi.getStudySession
+      .mockReturnValueOnce(initialLoad.promise)
+      .mockResolvedValueOnce({
+        due_cards: [{ ...followUpCard, deck_id: 'deck-2' }],
+        pending_learning_cards: [],
+      });
+
+    renderStudyWithNavigation();
+
+    await user.click(screen.getByRole('link', { name: 'Deck 2' }));
+
+    await screen.findByText('What is spaced repetition?');
+    expect(screen.queryByText('What is FSRS?')).not.toBeInTheDocument();
+
+    initialLoad.resolve({
+      due_cards: [studyCard],
+      pending_learning_cards: [],
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('What is FSRS?')).not.toBeInTheDocument();
+    });
   });
 
   it('shows a retry state instead of a false completion message when the due-card load fails', async () => {

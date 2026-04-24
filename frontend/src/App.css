@@ -357,12 +357,11 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  transition: all 0.2s ease;
+  transition: box-shadow 0.2s ease;
 }
 
 .deck-card:hover {
   box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
 }
 
 .deck-info {
@@ -1656,17 +1655,27 @@ button.code-block-copy:active {
 /* Study Page */
 .study-container {
   max-width: 640px;
+  width: 100%;
   margin: 0 auto;
   text-align: center;
 }
 
+.study-container-review {
+  max-width: 860px;
+}
+
 .study-progress {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 32px;
   margin-bottom: 24px;
   font-size: 14px;
   color: var(--text-tertiary);
+}
+
+.study-progress span {
+  white-space: nowrap;
 }
 
 .study-complete {
@@ -1749,6 +1758,8 @@ button.code-block-copy:active {
   color: var(--text-primary);
   font-size: 18px;
   line-height: 1.58;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .flashcard-text > :first-child {
