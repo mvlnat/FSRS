@@ -34,6 +34,8 @@ export function DeckEdit() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [fuzzEnabled, setFuzzEnabled] = useState(false);
+  const [newCardFrontTemplate, setNewCardFrontTemplate] = useState('');
+  const [newCardBackTemplate, setNewCardBackTemplate] = useState('');
   const [savingDeck, setSavingDeck] = useState(false);
 
   // Tag management state
@@ -132,6 +134,8 @@ export function DeckEdit() {
       setName(deckData.name);
       setDescription(deckData.description);
       setFuzzEnabled(deckData.fuzz_enabled);
+      setNewCardFrontTemplate(deckData.new_card_front_template ?? '');
+      setNewCardBackTemplate(deckData.new_card_back_template ?? '');
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load deck');
@@ -157,13 +161,32 @@ export function DeckEdit() {
 
     setSavingDeck(true);
     try {
-      await api.updateDeck(id, trimmedName, description, fuzzEnabled);
+      await api.updateDeck(
+        id,
+        trimmedName,
+        description,
+        fuzzEnabled,
+        newCardFrontTemplate,
+        newCardBackTemplate,
+      );
       await loadDeck();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update deck');
     } finally {
       setSavingDeck(false);
     }
+  };
+
+  const handleAddCardToggle = () => {
+    if (showAddCard) {
+      setShowAddCard(false);
+      return;
+    }
+
+    setNewFront(deck?.new_card_front_template ?? '');
+    setNewBack(deck?.new_card_back_template ?? '');
+    setNewLink('');
+    setShowAddCard(true);
   };
 
   const handleAddCard = async (e: React.FormEvent) => {
@@ -400,6 +423,29 @@ export function DeckEdit() {
                 rows={4}
               />
             </div>
+            <div className="deck-template-section">
+              <h3>New Card Templates</h3>
+              <div className="card-form-grid">
+                <div className="form-group">
+                  <label htmlFor="new-card-front-template">Front Template</label>
+                  <textarea
+                    id="new-card-front-template"
+                    value={newCardFrontTemplate}
+                    onChange={(e) => setNewCardFrontTemplate(e.target.value)}
+                    rows={6}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="new-card-back-template">Back Template</label>
+                  <textarea
+                    id="new-card-back-template"
+                    value={newCardBackTemplate}
+                    onChange={(e) => setNewCardBackTemplate(e.target.value)}
+                    rows={6}
+                  />
+                </div>
+              </div>
+            </div>
             <div className="deck-setting-toggle">
               <label htmlFor="fuzz-enabled" className="deck-setting-toggle-label">
                 <span className="deck-setting-toggle-copy">
@@ -528,7 +574,7 @@ export function DeckEdit() {
                 <option value="mostReviews">Most Reviews</option>
                 <option value="leastReviews">Least Reviews</option>
               </select>
-              <button onClick={() => setShowAddCard(!showAddCard)}>
+              <button onClick={handleAddCardToggle}>
                 {showAddCard ? 'Cancel' : 'Add Card'}
               </button>
             </div>

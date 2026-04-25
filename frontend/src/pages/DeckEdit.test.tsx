@@ -27,6 +27,8 @@ const baseDeck: Deck = {
   name: 'Biology',
   description: 'Cells',
   fuzz_enabled: false,
+  new_card_front_template: '',
+  new_card_back_template: '',
   created_at: '2026-04-14T00:00:00Z',
 };
 
@@ -81,7 +83,14 @@ describe('DeckEdit', () => {
   });
 
   it('reloads the deck after saving deck settings', async () => {
-    const updatedDeck: Deck = { ...baseDeck, name: 'Biology Updated', description: 'Updated cells', fuzz_enabled: true };
+    const updatedDeck: Deck = {
+      ...baseDeck,
+      name: 'Biology Updated',
+      description: 'Updated cells',
+      fuzz_enabled: true,
+      new_card_front_template: 'Prompt template',
+      new_card_back_template: 'Answer template',
+    };
     const user = userEvent.setup();
 
     mockedApi.getDeck.mockResolvedValueOnce(baseDeck).mockResolvedValueOnce(updatedDeck);
@@ -101,17 +110,66 @@ describe('DeckEdit', () => {
     const descriptionInput = screen.getByLabelText('Description');
     await user.clear(descriptionInput);
     await user.type(descriptionInput, 'Updated cells');
+    await user.type(screen.getByLabelText('Front Template'), 'Prompt template');
+    await user.type(screen.getByLabelText('Back Template'), 'Answer template');
     await user.click(screen.getByLabelText(/Enable Fuzz For Long-Term Reviews/));
 
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     await waitFor(() => {
-      expect(mockedApi.updateDeck).toHaveBeenCalledWith('deck-1', 'Biology Updated', 'Updated cells', true);
+      expect(mockedApi.updateDeck).toHaveBeenCalledWith(
+        'deck-1',
+        'Biology Updated',
+        'Updated cells',
+        true,
+        'Prompt template',
+        'Answer template',
+      );
     });
     await waitFor(() => {
       expect(mockedApi.getDeck).toHaveBeenCalledTimes(2);
     });
     await screen.findByRole('heading', { name: 'Biology Updated' });
+  });
+
+  it('prepopulates new cards from the deck templates', async () => {
+    const templatedDeck: Deck = {
+      ...baseDeck,
+      new_card_front_template: 'Term:\n\nDefinition:',
+      new_card_back_template: 'Notes:\n\nSource:',
+    };
+    const user = userEvent.setup();
+
+    mockedApi.getDeck.mockResolvedValue(templatedDeck);
+    mockedApi.getCards.mockResolvedValue([]);
+    mockedApi.getTags.mockResolvedValue(noTags);
+    mockedApi.createCard.mockResolvedValue({
+      id: 'card-2',
+      deck_id: 'deck-1',
+      front: templatedDeck.new_card_front_template,
+      back: templatedDeck.new_card_back_template,
+      link: '',
+      created_at: '2026-04-14T00:05:00Z',
+    });
+
+    renderDeckEdit();
+
+    await screen.findByRole('tab', { name: 'Cards (0)' });
+    await user.click(screen.getByRole('button', { name: 'Add Card' }));
+
+    expect(screen.getByLabelText('Front')).toHaveValue('Term:\n\nDefinition:');
+    expect(screen.getByLabelText('Back')).toHaveValue('Notes:\n\nSource:');
+
+    await user.click(screen.getByRole('button', { name: 'Add Card' }));
+
+    await waitFor(() => {
+      expect(mockedApi.createCard).toHaveBeenCalledWith(
+        'deck-1',
+        'Term:\n\nDefinition:',
+        'Notes:\n\nSource:',
+        '',
+      );
+    });
   });
 
   it('reloads cards after adding a new card', async () => {

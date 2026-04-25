@@ -73,6 +73,8 @@ describe('App end-to-end flows', () => {
       name: 'Biology',
       description: 'Cells and memory',
       fuzz_enabled: false,
+      new_card_front_template: '',
+      new_card_back_template: '',
       created_at: '2026-04-16T00:00:00Z',
     };
     const dueCard: CardWithState = {

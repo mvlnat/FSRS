@@ -38,9 +38,11 @@ func NewDeckHandler(deckRepo *repository.DeckRepository, cardRepo *repository.Ca
 }
 
 type createDeckRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	FuzzEnabled bool   `json:"fuzz_enabled"`
+	Name                 string  `json:"name"`
+	Description          string  `json:"description"`
+	FuzzEnabled          bool    `json:"fuzz_enabled"`
+	NewCardFrontTemplate *string `json:"new_card_front_template"`
+	NewCardBackTemplate  *string `json:"new_card_back_template"`
 }
 
 const maxDeckNameLength = 255
@@ -57,6 +59,22 @@ func validateDeckName(name string) error {
 		return fmt.Errorf("name must be %d characters or fewer", maxDeckNameLength)
 	}
 	return nil
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+
+	return *value
+}
+
+func valueOrFallback(value *string, fallback string) string {
+	if value == nil {
+		return fallback
+	}
+
+	return *value
 }
 
 func (h *DeckHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -98,8 +116,22 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	newCardFrontTemplate := valueOrEmpty(req.NewCardFrontTemplate)
+	newCardBackTemplate := valueOrEmpty(req.NewCardBackTemplate)
+	if err := validateDeckCardTemplates(newCardFrontTemplate, newCardBackTemplate); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	deck, err := h.deckRepo.Create(r.Context(), userID, req.Name, req.Description, req.FuzzEnabled)
+	deck, err := h.deckRepo.Create(
+		r.Context(),
+		userID,
+		req.Name,
+		req.Description,
+		req.FuzzEnabled,
+		newCardFrontTemplate,
+		newCardBackTemplate,
+	)
 	if err == repository.ErrInvalidInput {
 		http.Error(w, "Name is required", http.StatusBadRequest)
 		return
@@ -142,7 +174,8 @@ func (h *DeckHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, ok := requireOwnedDeck(w, r, h.deckRepo, deckID, userID); !ok {
+	existingDeck, ok := requireOwnedDeck(w, r, h.deckRepo, deckID, userID)
+	if !ok {
 		return
 	}
 
@@ -160,8 +193,22 @@ func (h *DeckHandler) Update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	newCardFrontTemplate := valueOrFallback(req.NewCardFrontTemplate, existingDeck.NewCardFrontTemplate)
+	newCardBackTemplate := valueOrFallback(req.NewCardBackTemplate, existingDeck.NewCardBackTemplate)
+	if err := validateDeckCardTemplates(newCardFrontTemplate, newCardBackTemplate); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	deck, err := h.deckRepo.Update(r.Context(), deckID, req.Name, req.Description, req.FuzzEnabled)
+	deck, err := h.deckRepo.Update(
+		r.Context(),
+		deckID,
+		req.Name,
+		req.Description,
+		req.FuzzEnabled,
+		newCardFrontTemplate,
+		newCardBackTemplate,
+	)
 	if err == repository.ErrInvalidInput {
 		http.Error(w, "Name is required", http.StatusBadRequest)
 		return
@@ -223,10 +270,12 @@ func (h *DeckHandler) Stats(w http.ResponseWriter, r *http.Request) {
 
 // DeckExport is the JSON structure for importing/exporting decks
 type DeckExport struct {
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	FuzzEnabled bool         `json:"fuzz_enabled,omitempty"`
-	Cards       []CardExport `json:"cards"`
+	Name                 string       `json:"name"`
+	Description          string       `json:"description"`
+	FuzzEnabled          bool         `json:"fuzz_enabled,omitempty"`
+	NewCardFrontTemplate string       `json:"new_card_front_template,omitempty"`
+	NewCardBackTemplate  string       `json:"new_card_back_template,omitempty"`
+	Cards                []CardExport `json:"cards"`
 }
 
 type CardExport struct {
@@ -260,10 +309,12 @@ func (h *DeckHandler) Export(w http.ResponseWriter, r *http.Request) {
 
 	// Build export
 	export := DeckExport{
-		Name:        deck.Name,
-		Description: deck.Description,
-		FuzzEnabled: deck.FuzzEnabled,
-		Cards:       make([]CardExport, len(cards)),
+		Name:                 deck.Name,
+		Description:          deck.Description,
+		FuzzEnabled:          deck.FuzzEnabled,
+		NewCardFrontTemplate: deck.NewCardFrontTemplate,
+		NewCardBackTemplate:  deck.NewCardBackTemplate,
+		Cards:                make([]CardExport, len(cards)),
 	}
 	for i, card := range cards {
 		export.Cards[i] = CardExport{
@@ -294,6 +345,10 @@ func (h *DeckHandler) Import(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := validateDeckDescription(export.Description); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateDeckCardTemplates(export.NewCardFrontTemplate, export.NewCardBackTemplate); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -332,7 +387,16 @@ func (h *DeckHandler) Import(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create deck and cards atomically
-	deck, err := h.deckRepo.ImportDeckWithCards(r.Context(), userID, export.Name, export.Description, export.FuzzEnabled, cards)
+	deck, err := h.deckRepo.ImportDeckWithCards(
+		r.Context(),
+		userID,
+		export.Name,
+		export.Description,
+		export.FuzzEnabled,
+		export.NewCardFrontTemplate,
+		export.NewCardBackTemplate,
+		cards,
+	)
 	if err == repository.ErrInvalidInput {
 		http.Error(w, "Deck import contains invalid content", http.StatusBadRequest)
 		return

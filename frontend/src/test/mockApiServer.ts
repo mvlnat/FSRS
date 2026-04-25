@@ -285,6 +285,8 @@ export function createMockApiServer(options: MockApiServerOptions = {}) {
         name: String(body.name ?? ''),
         description: String(body.description ?? ''),
         fuzz_enabled: Boolean(body.fuzz_enabled ?? false),
+        new_card_front_template: String(body.new_card_front_template ?? ''),
+        new_card_back_template: String(body.new_card_back_template ?? ''),
         created_at: new Date().toISOString(),
       };
 

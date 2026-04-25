@@ -883,6 +883,17 @@ button:disabled {
   box-shadow: var(--shadow-sm);
 }
 
+.deck-template-section {
+  margin: 8px 0 24px;
+  padding-top: 4px;
+}
+
+.deck-template-section h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
 .deck-setting-toggle {
   margin: 8px 0 24px;
 }

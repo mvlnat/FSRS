@@ -31,6 +31,8 @@ const createdDeck: Deck = {
   name: 'Biology',
   description: 'Cells',
   fuzz_enabled: false,
+  new_card_front_template: '',
+  new_card_back_template: '',
   created_at: '2026-04-14T00:00:00Z',
 };
 
@@ -129,6 +131,8 @@ describe('Decks', () => {
       name: 'Imported Deck',
       description: 'Imported cards',
       fuzz_enabled: false,
+      new_card_front_template: 'Imported front template',
+      new_card_back_template: 'Imported back template',
       created_at: '2026-04-14T00:05:00Z',
       stats: {
         total: 1,
@@ -140,6 +144,8 @@ describe('Decks', () => {
     const importPayload: api.DeckExport = {
       name: 'Imported Deck',
       description: 'Imported cards',
+      new_card_front_template: 'Imported front template',
+      new_card_back_template: 'Imported back template',
       cards: [
         {
           front: 'Imported question',

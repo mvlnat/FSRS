@@ -130,17 +130,41 @@ export async function getDeck(id: string): Promise<Deck> {
   return request<Deck>(`/decks/${id}`);
 }
 
-export async function createDeck(name: string, description: string): Promise<Deck> {
+export async function createDeck(
+  name: string,
+  description: string,
+  newCardFrontTemplate: string = '',
+  newCardBackTemplate: string = '',
+): Promise<Deck> {
   return request<Deck>('/decks', {
     method: 'POST',
-    body: JSON.stringify({ name, description, fuzz_enabled: false }),
+    body: JSON.stringify({
+      name,
+      description,
+      fuzz_enabled: false,
+      new_card_front_template: newCardFrontTemplate,
+      new_card_back_template: newCardBackTemplate,
+    }),
   });
 }
 
-export async function updateDeck(id: string, name: string, description: string, fuzzEnabled: boolean = false): Promise<Deck> {
+export async function updateDeck(
+  id: string,
+  name: string,
+  description: string,
+  fuzzEnabled: boolean = false,
+  newCardFrontTemplate: string = '',
+  newCardBackTemplate: string = '',
+): Promise<Deck> {
   return request<Deck>(`/decks/${id}`, {
     method: 'PUT',
-    body: JSON.stringify({ name, description, fuzz_enabled: fuzzEnabled }),
+    body: JSON.stringify({
+      name,
+      description,
+      fuzz_enabled: fuzzEnabled,
+      new_card_front_template: newCardFrontTemplate,
+      new_card_back_template: newCardBackTemplate,
+    }),
   });
 }
 
@@ -153,6 +177,8 @@ export interface DeckExport {
   name: string;
   description: string;
   fuzz_enabled?: boolean;
+  new_card_front_template?: string;
+  new_card_back_template?: string;
   cards: { front: string; back: string; link?: string }[];
 }
 

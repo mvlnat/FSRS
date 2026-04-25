@@ -153,8 +153,11 @@ Useful flags:
 
 ## Production Notes
 
+- FSRS owns the VM's public nginx edge because its `nginx` service binds host ports `80` and `443`.
+- That edge must stay a shared config for `fsrs.ziyang.li`, `store.ziyang.li`, and `random.ziyang.li`. Store and RandomPick do not bind public ports; their containers join the external Docker network `shared-edge` as `store-edge` and `randompick-edge`.
+- Do not deploy an FSRS-only `nginx.conf`. A future FSRS release uploads `nginx.conf` to `/root/fsrs`, so removing the store/randompick server blocks will break those sites.
 - `docker-compose.yml` assumes HTTPS termination and mounted certificates at `./certs/fullchain.pem` and `./certs/privkey.pem`.
-- `docker-compose.prod.yml` is the production-targeted stack and expects Let's Encrypt certs at `/etc/letsencrypt/live/fsrs.ziyang.li/`.
+- `docker-compose.prod.yml` is the production-targeted stack and mounts `/etc/letsencrypt` read-only so the shared edge can serve each hostname's certificate.
 - The backend now refuses to start in production unless `SECURE_COOKIES=true`.
 - The production VM is a runtime host, not a build host. Keep builds local and publish prebuilt Docker images to the VM.
 - After a successful deploy, `/root/fsrs` should normally contain only `.env`, `docker-compose.prod.yml`, and `nginx.conf`. Source trees, `node_modules`, temporary tar archives, local cert copies, and other dev/release leftovers should be removed.
@@ -169,6 +172,7 @@ PROD_HOST=root@5.78.201.47
 
 ssh "$PROD_HOST" "apt-get update && apt-get install -y docker.io docker-compose-v2 certbot"
 ssh "$PROD_HOST" "certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d fsrs.ziyang.li"
+ssh "$PROD_HOST" "docker network create shared-edge >/dev/null 2>&1 || true"
 ssh "$PROD_HOST" "mkdir -p /root/fsrs && chmod 700 /root/fsrs"
 scp docker-compose.prod.yml nginx.conf "$PROD_HOST":/root/fsrs/
 scp /path/to/prod.env "$PROD_HOST":/root/fsrs/.env

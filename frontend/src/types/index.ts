@@ -9,6 +9,8 @@ export interface Deck {
   name: string;
   description: string;
   fuzz_enabled: boolean;
+  new_card_front_template: string;
+  new_card_back_template: string;
   created_at: string;
 }
 

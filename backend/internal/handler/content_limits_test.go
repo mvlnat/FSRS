@@ -101,6 +101,53 @@ func TestValidateCardContent(t *testing.T) {
 	}
 }
 
+func TestValidateDeckCardTemplates(t *testing.T) {
+	testCases := []struct {
+		name          string
+		frontTemplate string
+		backTemplate  string
+		wantErr       string
+	}{
+		{
+			name: "blank templates are allowed",
+		},
+		{
+			name:          "front template too long",
+			frontTemplate: strings.Repeat("a", maxCardContentLength+1),
+			wantErr:       "front template must be 100000 characters or fewer",
+		},
+		{
+			name:         "back template too long",
+			backTemplate: strings.Repeat("a", maxCardContentLength+1),
+			wantErr:      "back template must be 100000 characters or fewer",
+		},
+		{
+			name:          "valid templates",
+			frontTemplate: strings.Repeat("a", maxCardContentLength),
+			backTemplate:  strings.Repeat("b", maxCardContentLength),
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDeckCardTemplates(tt.frontTemplate, tt.backTemplate)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("validateDeckCardTemplates() error = %v, want nil", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("validateDeckCardTemplates() error = nil, want %q", tt.wantErr)
+			}
+			if err.Error() != tt.wantErr {
+				t.Fatalf("validateDeckCardTemplates() error = %q, want %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateImportCardCount(t *testing.T) {
 	tests := []struct {
 		name    string

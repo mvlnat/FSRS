@@ -7,12 +7,14 @@ import (
 )
 
 type Deck struct {
-	ID          uuid.UUID `json:"id"`
-	UserID      uuid.UUID `json:"user_id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	FuzzEnabled bool      `json:"fuzz_enabled"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID                   uuid.UUID `json:"id"`
+	UserID               uuid.UUID `json:"user_id"`
+	Name                 string    `json:"name"`
+	Description          string    `json:"description"`
+	FuzzEnabled          bool      `json:"fuzz_enabled"`
+	NewCardFrontTemplate string    `json:"new_card_front_template"`
+	NewCardBackTemplate  string    `json:"new_card_back_template"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 type DeckStats struct {

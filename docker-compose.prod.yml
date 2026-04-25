@@ -38,6 +38,9 @@ services:
     image: fsrs-frontend:latest
     restart: unless-stopped
 
+  # Shared VM edge: this is the only production container that binds host 80/443.
+  # Keep ./nginx.conf as the combined edge config for fsrs, store, and randompick.
+  # The other apps join the external shared-edge network and expose aliases there.
   nginx:
     image: nginx:alpine
     ports:
@@ -45,12 +48,19 @@ services:
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt/live/fsrs.ziyang.li/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
-      - /etc/letsencrypt/live/fsrs.ziyang.li/privkey.pem:/etc/nginx/certs/privkey.pem:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend
       - frontend
+    networks:
+      default: {}
+      edge: {}
     restart: unless-stopped
+
+networks:
+  edge:
+    name: shared-edge
+    external: true
 
 volumes:
   pgdata:

@@ -20,6 +20,11 @@ Options:
   --skip-tests        Skip backend/frontend checks before build
   --skip-verify       Skip post-deploy verification checks
   -h, --help          Show this help text
+
+Shared edge:
+  This repo owns the VM's host 80/443 nginx container. Its nginx.conf must stay
+  as the combined shared-edge config for fsrs.ziyang.li, store.ziyang.li, and
+  random.ziyang.li. Do not replace it with an FSRS-only config during deploy.
 EOF
 }
 

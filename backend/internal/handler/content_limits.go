@@ -20,6 +20,17 @@ func validateDeckDescription(description string) error {
 	return nil
 }
 
+func validateDeckCardTemplates(frontTemplate, backTemplate string) error {
+	if utf8.RuneCountInString(frontTemplate) > maxCardContentLength {
+		return fmt.Errorf("front template must be %d characters or fewer", maxCardContentLength)
+	}
+	if utf8.RuneCountInString(backTemplate) > maxCardContentLength {
+		return fmt.Errorf("back template must be %d characters or fewer", maxCardContentLength)
+	}
+
+	return nil
+}
+
 func validateCardContent(front, back, link string) error {
 	if utf8.RuneCountInString(front) > maxCardContentLength {
 		return fmt.Errorf("front must be %d characters or fewer", maxCardContentLength)
