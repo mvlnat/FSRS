@@ -1,9 +1,15 @@
 package handler
 
 import (
+	"bufio"
+	"context"
+	"fmt"
+	"net"
 	"net/mail"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewSMTPAuthEmailSenderParsesDisplayNameFromAddress(t *testing.T) {
@@ -35,6 +41,79 @@ func TestNewSMTPAuthEmailSenderRejectsInvalidFromAddress(t *testing.T) {
 	}
 	if err.Error() != "smtp from address is invalid" {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNewSMTPAuthEmailSenderRejectsInjectedFromAddress(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewSMTPAuthEmailSender("smtp.example.com", 587, "", "", "sender@example.com\r\nBcc: attacker@example.com")
+	if err == nil {
+		t.Fatal("expected injected from address error")
+	}
+}
+
+func TestSMTPAuthEmailSenderRejectsInvalidRecipientAddress(t *testing.T) {
+	t.Parallel()
+
+	sender, err := NewSMTPAuthEmailSender("smtp.example.com", 587, "", "", "noreply@example.com")
+	if err != nil {
+		t.Fatalf("NewSMTPAuthEmailSender returned error: %v", err)
+	}
+
+	err = sender.SendPasswordResetEmail(context.Background(), "learner@example.com\r\nBcc: attacker@example.com", "https://fsrs.example.com/reset-password?token=reset123")
+	if err == nil {
+		t.Fatal("expected invalid recipient address error")
+	}
+}
+
+func TestSMTPAuthEmailSenderRequiresSTARTTLS(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	serverDone := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		_, _ = fmt.Fprint(conn, "220 localhost ESMTP\r\n")
+		line, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil || !strings.HasPrefix(line, "EHLO ") {
+			return
+		}
+		_, _ = fmt.Fprint(conn, "250-localhost\r\n250 HELP\r\n")
+	}()
+
+	host, portValue, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("split address: %v", err)
+	}
+	port, err := strconv.Atoi(portValue)
+	if err != nil {
+		t.Fatalf("parse port: %v", err)
+	}
+	sender, err := NewSMTPAuthEmailSender(host, port, "", "", "noreply@example.com")
+	if err != nil {
+		t.Fatalf("NewSMTPAuthEmailSender returned error: %v", err)
+	}
+
+	err = sender.SendPasswordResetEmail(context.Background(), "learner@example.com", "https://fsrs.example.com/reset-password?token=reset123")
+	if err == nil || !strings.Contains(err.Error(), "STARTTLS") {
+		t.Fatalf("expected STARTTLS error, got %v", err)
+	}
+
+	select {
+	case <-serverDone:
+	case <-time.After(time.Second):
+		t.Fatal("smtp test server did not finish")
 	}
 }
 

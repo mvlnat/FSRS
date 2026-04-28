@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.production
+.env.secrets
+.env.smtp
 .env.*.local
 
 # SSL certificates
@@ -31,6 +33,7 @@ logs/
 # Build artifacts
 dist/
 build/
+backend/server
 *.exe
 *.dll
 *.so

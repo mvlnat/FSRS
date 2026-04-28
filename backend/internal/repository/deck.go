@@ -187,7 +187,7 @@ func (r *DeckRepository) ListByUserWithStats(ctx context.Context, userID uuid.UU
 		SELECT
 			d.id, d.user_id, d.name, d.description, d.fuzz_enabled, d.new_card_front_template, d.new_card_back_template, d.created_at,
 			COUNT(c.id) as total,
-			COUNT(CASE WHEN cs.id IS NULL THEN 1 END) as new,
+			COUNT(CASE WHEN c.id IS NOT NULL AND cs.id IS NULL THEN 1 END) as new,
 			COUNT(CASE WHEN cs.due <= $2 AND cs.state IN (1, 3) THEN 1 END) as learning,
 			COUNT(CASE WHEN cs.due <= $2 AND cs.state = 2 THEN 1 END) as due
 		FROM decks d

@@ -322,8 +322,15 @@ func validateJWTSecret(environment, jwtSecret string) error {
 	if environment != "production" {
 		return nil
 	}
+	jwtSecret = strings.TrimSpace(jwtSecret)
 	if jwtSecret == defaultDevelopmentJWTSecret {
 		return fmt.Errorf("development default value is not allowed in production")
+	}
+	lowerSecret := strings.ToLower(jwtSecret)
+	for _, marker := range []string{"change-this", "change_this", "replace-with", "placeholder", "example"} {
+		if strings.Contains(lowerSecret, marker) {
+			return fmt.Errorf("placeholder value is not allowed in production")
+		}
 	}
 	if len(jwtSecret) < minJWTSecretBytes {
 		return fmt.Errorf("must be at least %d bytes in production", minJWTSecretBytes)

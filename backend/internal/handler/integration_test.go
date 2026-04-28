@@ -523,6 +523,28 @@ func TestIntegration_DeckCRUD(t *testing.T) {
 		t.Fatalf("list decks: got status %d, want %d", rec.Code, http.StatusOK)
 	}
 
+	var decks []struct {
+		ID    string `json:"id"`
+		Stats struct {
+			Total    int `json:"total"`
+			New      int `json:"new"`
+			Due      int `json:"due"`
+			Learning int `json:"learning"`
+		} `json:"stats"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&decks); err != nil {
+		t.Fatalf("failed to decode decks: %v", err)
+	}
+	if len(decks) != 1 {
+		t.Fatalf("expected 1 deck, got %d", len(decks))
+	}
+	if decks[0].ID != deck.ID {
+		t.Fatalf("listed deck ID = %s, want %s", decks[0].ID, deck.ID)
+	}
+	if decks[0].Stats.Total != 0 || decks[0].Stats.New != 0 || decks[0].Stats.Due != 0 || decks[0].Stats.Learning != 0 {
+		t.Fatalf("empty deck stats = %+v, want all zero", decks[0].Stats)
+	}
+
 	// Add card to deck
 	body = `{"front":"What is 2+2?","back":"4"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/decks/"+deck.ID+"/cards", bytes.NewReader([]byte(body)))

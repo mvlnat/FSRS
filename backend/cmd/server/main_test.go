@@ -59,6 +59,18 @@ func TestValidateJWTSecret(t *testing.T) {
 			wantErr:     true,
 		},
 		{
+			name:        "production rejects change placeholder",
+			environment: "production",
+			jwtSecret:   "CHANGE_THIS_TO_RANDOM_32_CHAR_STRING",
+			wantErr:     true,
+		},
+		{
+			name:        "production rejects replacement placeholder",
+			environment: "production",
+			jwtSecret:   "replace-with-a-random-32-byte-production-secret",
+			wantErr:     true,
+		},
+		{
 			name:        "production accepts strong secret",
 			environment: "production",
 			jwtSecret:   "0123456789abcdef0123456789abcdef",

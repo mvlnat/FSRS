@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"html/template"
 	"log"
 	"mime/multipart"
@@ -13,13 +14,17 @@ import (
 	"net/textproto"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type SMTPAuthEmailSender struct {
 	fromHeader   string
 	envelopeFrom string
+	host         string
+	port         int
 	addr         string
 	auth         smtp.Auth
+	tlsConfig    *tls.Config
 }
 
 type actionEmailContent struct {
@@ -124,6 +129,9 @@ func NewSMTPAuthEmailSender(host string, port int, username, password, from stri
 	if host == "" || port <= 0 || from == "" {
 		return nil, authValidationError("smtp host, port, and from address are required")
 	}
+	if strings.ContainsAny(from, "\r\n") {
+		return nil, authValidationError("smtp from address is invalid")
+	}
 
 	fromAddress, err := mail.ParseAddress(from)
 	if err != nil {
@@ -138,8 +146,14 @@ func NewSMTPAuthEmailSender(host string, port int, username, password, from stri
 	return &SMTPAuthEmailSender{
 		fromHeader:   fromAddress.String(),
 		envelopeFrom: fromAddress.Address,
+		host:         host,
+		port:         port,
 		addr:         net.JoinHostPort(host, strconv.Itoa(port)),
 		auth:         auth,
+		tlsConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ServerName: host,
+		},
 	}, nil
 }
 
@@ -161,17 +175,100 @@ func (s *SMTPAuthEmailSender) SendPasswordResetEmail(ctx context.Context, email,
 	return s.send(ctx, email, content)
 }
 
-func (s *SMTPAuthEmailSender) send(_ context.Context, email string, content actionEmailContent) error {
-	message, err := buildMultipartEmailMessage(email, s.fromHeader, content)
+func (s *SMTPAuthEmailSender) send(ctx context.Context, email string, content actionEmailContent) error {
+	recipient, err := normalizeRecipientEmail(email)
 	if err != nil {
 		return err
 	}
 
-	return smtp.SendMail(s.addr, s.auth, s.envelopeFrom, []string{email}, message)
+	message, err := buildMultipartEmailMessage(recipient, s.fromHeader, content)
+	if err != nil {
+		return err
+	}
+
+	client, err := s.connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if s.auth != nil {
+		if err := client.Auth(s.auth); err != nil {
+			return err
+		}
+	}
+	if err := client.Mail(s.envelopeFrom); err != nil {
+		return err
+	}
+	if err := client.Rcpt(recipient); err != nil {
+		return err
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := writer.Write(message); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }
 
 func (s *SMTPAuthEmailSender) CheckConfig() error {
 	return nil
+}
+
+func normalizeRecipientEmail(email string) (string, error) {
+	email = normalizeEmail(email)
+	if email == "" || strings.ContainsAny(email, "\r\n") {
+		return "", authValidationError("recipient email address is invalid")
+	}
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email {
+		return "", authValidationError("recipient email address is invalid")
+	}
+	if err := validateEmail(email); err != nil {
+		return "", err
+	}
+	return email, nil
+}
+
+func (s *SMTPAuthEmailSender) connect(ctx context.Context) (*smtp.Client, error) {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	if s.port == 465 {
+		conn, err := tls.DialWithDialer(dialer, "tcp", s.addr, s.tlsConfig)
+		if err != nil {
+			return nil, err
+		}
+		client, err := smtp.NewClient(conn, s.host)
+		if err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+		return client, nil
+	}
+
+	conn, err := dialer.DialContext(ctx, "tcp", s.addr)
+	if err != nil {
+		return nil, err
+	}
+	client, err := smtp.NewClient(conn, s.host)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if ok, _ := client.Extension("STARTTLS"); !ok {
+		_ = client.Close()
+		return nil, authValidationError("smtp server does not advertise STARTTLS")
+	}
+	if err := client.StartTLS(s.tlsConfig); err != nil {
+		_ = client.Close()
+		return nil, err
+	}
+	return client, nil
 }
 
 type LogAuthEmailSender struct {
