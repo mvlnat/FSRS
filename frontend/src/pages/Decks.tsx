@@ -431,7 +431,6 @@ export function Decks() {
                   <span>Total: {deck.stats.total}</span>
                   <span>New: {deck.stats.new}</span>
                   <span>Due: {deck.stats.due}</span>
-                  <span>Learning: {deck.stats.learning}</span>
                 </div>
               </div>
               <div className="deck-actions">
