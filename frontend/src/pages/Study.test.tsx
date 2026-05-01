@@ -254,6 +254,35 @@ describe('Study', () => {
     expect(screen.queryByRole('link', { name: 'Bad' })).not.toBeInTheDocument();
   });
 
+  it('renders nonconsecutive numeric problem IDs as literal card text', async () => {
+    mockedApi.getStudySession.mockResolvedValueOnce({
+      due_cards: [
+        {
+          ...studyCard,
+          front: [
+            'Segment Tree',
+            '',
+            '406. Queue Reconstruction By Height',
+            '699. Falling Squares',
+            '1649. Create Sorted Array Through Instructions',
+          ].join('\n'),
+        },
+      ],
+      pending_learning_cards: [],
+    });
+
+    const { container } = renderStudy();
+
+    await screen.findByText('Segment Tree');
+
+    expect(container.querySelector('.flashcard-text ol')).not.toBeInTheDocument();
+    expect(container.querySelector('.flashcard-text')?.textContent).toContain([
+      '406. Queue Reconstruction By Height',
+      '699. Falling Squares',
+      '1649. Create Sorted Array Through Instructions',
+    ].join('\n'));
+  });
+
   it('ignores review shortcuts while focus is on interactive elements', async () => {
     const user = userEvent.setup();
 

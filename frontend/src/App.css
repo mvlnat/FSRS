@@ -1796,6 +1796,10 @@ button.code-block-copy:active {
   line-height: inherit;
 }
 
+.flashcard-text p {
+  white-space: pre-wrap;
+}
+
 .flashcard-text h1,
 .flashcard-text h2,
 .flashcard-text h3,

@@ -7,6 +7,7 @@ import type { CardState, CardWithState, StudySession, Rating } from '../types';
 import { RATING_LABELS } from '../types';
 import * as api from '../api/client';
 import { normalizeOptionalExternalLink } from '../utils/links';
+import { preserveNumericIdentifiers } from '../utils/markdown';
 
 type HighlightTokenType = 'plain' | 'comment' | 'string' | 'keyword' | 'number' | 'function' | 'property' | 'operator';
 
@@ -770,7 +771,7 @@ export function Study() {
             <div className="flashcard-front">
               <h3>Question</h3>
               <div className="flashcard-text">
-                <Markdown components={markdownComponents}>{currentCard.front}</Markdown>
+                <Markdown components={markdownComponents}>{preserveNumericIdentifiers(currentCard.front)}</Markdown>
               </div>
             </div>
 
@@ -778,7 +779,7 @@ export function Study() {
               <div className="flashcard-back">
                 <h3>Answer</h3>
                 <div className="flashcard-text">
-                  <Markdown components={markdownComponents}>{currentCard.back}</Markdown>
+                  <Markdown components={markdownComponents}>{preserveNumericIdentifiers(currentCard.back)}</Markdown>
                 </div>
                 {safeCurrentCardLink && (
                   <div className="card-link-wrapper">
