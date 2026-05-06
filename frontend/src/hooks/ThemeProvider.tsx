@@ -11,12 +11,16 @@ function getSystemTheme(): EffectiveTheme {
 }
 
 function getStoredTheme(): ThemePreference {
-  if (typeof window === 'undefined') {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
     return 'system';
   }
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === 'light' || stored === 'dark' || stored === 'system') {
-    return stored;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === 'light' || stored === 'dark' || stored === 'system') {
+      return stored;
+    }
+  } catch {
+    // localStorage may be unavailable in some environments
   }
   return 'system';
 }
@@ -59,7 +63,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setTheme = useCallback((newTheme: ThemePreference) => {
-    localStorage.setItem(STORAGE_KEY, newTheme);
+    try {
+      localStorage.setItem(STORAGE_KEY, newTheme);
+    } catch {
+      // localStorage may be unavailable in some environments
+    }
     setThemeState(newTheme);
   }, []);
 

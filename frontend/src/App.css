@@ -2426,3 +2426,76 @@ button.code-block-copy:active {
 [data-theme="dark"] .due-calendar-summary {
   color: #d4a84b;
 }
+
+[data-theme="dark"] .due-calendar-weekdays span {
+  color: #c9a054;
+}
+
+[data-theme="dark"] .due-calendar-day {
+  background: rgba(44, 44, 46, 0.8);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .due-calendar-day:hover {
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .due-calendar-day.is-today {
+  border-color: rgba(0, 113, 227, 0.5);
+}
+
+[data-theme="dark"] .due-calendar-day.is-selected {
+  border-color: #d4a84b;
+  box-shadow: 0 0 0 3px rgba(212, 168, 75, 0.2);
+}
+
+[data-theme="dark"] .due-calendar-day[data-tone='empty'] {
+  background: rgba(44, 44, 46, 0.6);
+}
+
+[data-theme="dark"] .due-calendar-day[data-tone='low'] {
+  background: rgba(140, 106, 47, 0.25);
+}
+
+[data-theme="dark"] .due-calendar-day[data-tone='medium'] {
+  background: rgba(180, 130, 50, 0.35);
+}
+
+[data-theme="dark"] .due-calendar-day[data-tone='high'] {
+  background: rgba(200, 140, 50, 0.45);
+}
+
+[data-theme="dark"] .due-calendar-day[data-tone='peak'] {
+  background: rgba(212, 168, 75, 0.5);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .due-calendar-nav-btn,
+[data-theme="dark"] .due-calendar-today-btn {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .due-calendar-detail {
+  background: rgba(44, 44, 46, 0.6);
+}
+
+[data-theme="dark"] .due-calendar-detail-label {
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .due-calendar-detail h3 {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .due-calendar-deck-item {
+  background: rgba(58, 58, 60, 0.6);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .due-calendar-deck-item:hover {
+  background: rgba(68, 68, 70, 0.8);
+}
+
+[data-theme="dark"] .due-calendar-empty {
+  color: var(--text-secondary);
+}
