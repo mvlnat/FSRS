@@ -2409,3 +2409,16 @@ button.code-block-copy:active {
   background: rgba(0, 113, 227, 0.15);
   color: #6bb3ff;
 }
+
+[data-theme="dark"] .due-calendar-month,
+[data-theme="dark"] .due-calendar-day-number,
+[data-theme="dark"] .due-calendar-day-count,
+[data-theme="dark"] .due-calendar-detail-title,
+[data-theme="dark"] .due-calendar-detail-total {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .due-calendar-header h2,
+[data-theme="dark"] .due-calendar-summary {
+  color: #d4a84b;
+}
