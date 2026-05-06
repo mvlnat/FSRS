@@ -1832,6 +1832,11 @@ button.code-block-copy:active {
   text-align: center;
 }
 
+.study-header {
+  text-align: left;
+  margin-bottom: 24px;
+}
+
 .study-container-review {
   max-width: 860px;
 }

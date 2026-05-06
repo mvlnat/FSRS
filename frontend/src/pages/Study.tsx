@@ -719,9 +719,11 @@ export function Study() {
 
   return (
     <div className={studyContainerClassName}>
-      <button onClick={() => navigate('/')} className="back-btn">
-        Back to Decks
-      </button>
+      <div className="study-header">
+        <button onClick={() => navigate('/')} className="back-btn">
+          Back to Decks
+        </button>
+      </div>
 
       {error && !isErrorState && <div className="error" role="alert">{error}</div>}
 
