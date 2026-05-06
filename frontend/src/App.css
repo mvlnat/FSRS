@@ -2385,6 +2385,10 @@ button.code-block-copy:active {
   background: linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-tertiary) 100%);
 }
 
+[data-theme="dark"] .flashcard-front {
+  background: var(--bg-primary);
+}
+
 [data-theme="dark"] .about-hero {
   background: var(--bg-primary);
   border-color: var(--border);
