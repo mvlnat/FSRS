@@ -460,28 +460,30 @@ export function Decks() {
             <div className="due-calendar-nav">
               <button
                 type="button"
-                className="btn-ghost due-calendar-nav-btn"
-                onClick={() => handleMonthChange(-1)}
-                aria-label="Show previous month"
-              >
-                Prev
-              </button>
-              <span className="due-calendar-month">{monthFormatter.format(visibleMonth)}</span>
-              <button
-                type="button"
-                className="btn-ghost due-calendar-nav-btn"
-                onClick={() => handleMonthChange(1)}
-                aria-label="Show next month"
-              >
-                Next
-              </button>
-              <button
-                type="button"
                 className="btn-secondary due-calendar-today-btn"
                 onClick={handleToday}
               >
                 Today
               </button>
+              <div className="due-calendar-nav-group">
+                <button
+                  type="button"
+                  className="btn-ghost due-calendar-nav-btn"
+                  onClick={() => handleMonthChange(-1)}
+                  aria-label="Show previous month"
+                >
+                  Prev
+                </button>
+                <span className="due-calendar-month">{monthFormatter.format(visibleMonth)}</span>
+                <button
+                  type="button"
+                  className="btn-ghost due-calendar-nav-btn"
+                  onClick={() => handleMonthChange(1)}
+                  aria-label="Show next month"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
         </div>

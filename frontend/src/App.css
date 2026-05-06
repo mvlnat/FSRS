@@ -755,9 +755,15 @@ button:disabled {
 .due-calendar-nav {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 16px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.due-calendar-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .due-calendar-nav-btn,
