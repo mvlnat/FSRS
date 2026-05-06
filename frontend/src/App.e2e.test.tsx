@@ -122,9 +122,9 @@ describe('App end-to-end flows', () => {
 
     render(<App />);
 
-    await screen.findByRole('heading', { name: 'How Study Works' });
-    expect(screen.getByText(/comes back in about 1 minute/i)).toBeInTheDocument();
-    expect(screen.getByText(/short-term learning steps are enabled/i)).toBeInTheDocument();
+    await screen.findByRole('heading', { name: 'Learn Smarter, Not Harder' });
+    expect(screen.getByText(/What is Spaced Repetition/i)).toBeInTheDocument();
+    expect(screen.getByText(/helps you memorize anything efficiently/i)).toBeInTheDocument();
   });
 
   it('supports requesting a password reset from the login page', async () => {

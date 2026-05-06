@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useDemo } from '../hooks/useDemo';
 
 export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const { login, loading } = useAuth();
+  const { enterDemo } = useDemo();
   const navigate = useNavigate();
   const location = useLocation();
   const info = typeof location.state === 'object' && location.state !== null && 'info' in location.state
@@ -22,6 +24,11 @@ export function Login() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     }
+  };
+
+  const handleTryDemo = () => {
+    enterDemo();
+    navigate('/');
   };
 
   return (
@@ -62,7 +69,16 @@ export function Login() {
         <Link to="/forgot-password">Forgot your password?</Link>
       </p>
       <p>
-        Don't have an account? <Link to="/register">Register</Link>
+        Don&apos;t have an account? <Link to="/register">Register</Link>
+      </p>
+      <div className="demo-divider">
+        <span>or</span>
+      </div>
+      <button type="button" onClick={handleTryDemo} className="btn-demo">
+        Try Demo
+      </button>
+      <p className="demo-hint">
+        Explore the app with sample flashcards. No account needed.
       </p>
     </div>
   );

@@ -77,6 +77,35 @@
   text-decoration: none;
 }
 
+.theme-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.theme-toggle-badge {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
 .user-info {
   display: flex;
   align-items: center;
@@ -311,6 +340,138 @@ button:disabled {
 .auth-container a {
   color: var(--accent);
   font-weight: 500;
+}
+
+.auth-container form button {
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* Demo Mode */
+.demo-divider {
+  display: flex;
+  align-items: center;
+  margin: 28px 0 20px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.demo-divider::before,
+.demo-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.demo-divider span {
+  padding: 0 16px;
+}
+
+.btn-demo {
+  width: 100%;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+}
+
+.btn-demo:hover {
+  background: var(--bg-tertiary);
+}
+
+.demo-hint {
+  margin-top: 12px !important;
+  font-size: 13px !important;
+  color: var(--text-tertiary) !important;
+}
+
+.demo-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, #5856d6 0%, #af52de 100%);
+  color: white;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 1000;
+}
+
+.demo-banner-signup {
+  background: white;
+  color: #5856d6;
+  padding: 6px 16px;
+  border-radius: 980px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+}
+
+.demo-banner-signup:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+/* Signup Prompt Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1001;
+}
+
+.modal {
+  background: var(--bg-primary);
+  border-radius: 20px;
+  padding: 32px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: var(--shadow-lg);
+}
+
+.signup-prompt-modal h2 {
+  margin: 0 0 16px;
+  font-size: 24px;
+}
+
+.signup-prompt-modal p {
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.signup-prompt-benefit {
+  font-size: 14px;
+  color: var(--text-tertiary) !important;
+}
+
+.signup-prompt-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-secondary);
 }
 
 /* Decks Page */
@@ -2187,4 +2348,49 @@ button.code-block-copy:active {
     flex: 1;
     text-align: center;
   }
+}
+
+/* Dark Mode Overrides */
+[data-theme="dark"] .header {
+  background: rgba(29, 29, 31, 0.72);
+}
+
+[data-theme="dark"] .due-calendar-card {
+  background: linear-gradient(145deg, #2c2c2e 0%, #1c1c1e 100%);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .due-calendar-header h2 {
+  color: #d4a84b;
+}
+
+[data-theme="dark"] .due-calendar-subtitle {
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .card-container,
+[data-theme="dark"] .card-question-container,
+[data-theme="dark"] .card-answer-container {
+  background: rgba(29, 29, 31, 0.72);
+}
+
+[data-theme="dark"] .form-group input,
+[data-theme="dark"] .form-group textarea,
+[data-theme="dark"] .form-group select {
+  background: var(--bg-tertiary);
+}
+
+[data-theme="dark"] .deck-setting-card {
+  background: linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-tertiary) 100%);
+}
+
+[data-theme="dark"] .about-hero {
+  background: var(--bg-primary);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .about-note {
+  background: rgba(0, 113, 227, 0.15);
+  color: #6bb3ff;
 }
