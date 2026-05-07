@@ -121,6 +121,13 @@ export async function confirmEmailVerification(token: string): Promise<ApiMessag
   });
 }
 
+export async function resendVerificationEmail(email: string): Promise<ApiMessageResponse> {
+  return request<ApiMessageResponse>('/auth/verify-email/resend', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
 // Decks
 export async function getDecks(): Promise<DeckWithStats[]> {
   return request<DeckWithStats[]>('/decks');

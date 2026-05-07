@@ -167,6 +167,33 @@
   font-size: 15px;
 }
 
+.warning {
+  background: rgba(255, 159, 10, 0.12);
+  color: #946800;
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  font-size: 15px;
+}
+
+.warning p {
+  margin: 0 0 8px 0;
+}
+
+.warning p:last-child {
+  margin-bottom: 0;
+}
+
+.warning .btn-link {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+[data-theme="dark"] .warning {
+  background: rgba(255, 159, 10, 0.15);
+  color: #ffb340;
+}
+
 /* Buttons - Apple style */
 button {
   font-family: var(--font-system);

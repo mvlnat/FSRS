@@ -2,11 +2,14 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDemo } from '../hooks/useDemo';
+import * as api from '../api/client';
 
 export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [emailNotVerified, setEmailNotVerified] = useState(false);
+  const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
   const { login, loading } = useAuth();
   const { enterDemo } = useDemo();
   const navigate = useNavigate();
@@ -18,11 +21,29 @@ export function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setEmailNotVerified(false);
+    setResendStatus('idle');
     try {
       await login(email, password);
       navigate('/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      const message = err instanceof Error ? err.message : 'Login failed';
+      if (message.toLowerCase().includes('email not verified')) {
+        setEmailNotVerified(true);
+      } else {
+        setError(message);
+      }
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setResendStatus('sending');
+    try {
+      await api.resendVerificationEmail(email);
+      setResendStatus('sent');
+    } catch {
+      setResendStatus('idle');
+      setError('Failed to resend verification email. Please try again.');
     }
   };
 
@@ -41,6 +62,23 @@ export function Login() {
           </div>
         )}
         {error && <div className="error" role="alert">{error}</div>}
+        {emailNotVerified && (
+          <div className="warning" role="alert">
+            <p>Your email address has not been verified.</p>
+            {resendStatus === 'sent' ? (
+              <p>Verification email sent. Please check your inbox.</p>
+            ) : (
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={resendStatus === 'sending'}
+                className="btn-link"
+              >
+                {resendStatus === 'sending' ? 'Sending...' : 'Resend verification email'}
+              </button>
+            )}
+          </div>
+        )}
         <div className="form-group">
           <label htmlFor="email">Email</label>
           <input
