@@ -62,48 +62,44 @@ docker build --platform linux/amd64 -t fsrs-backend -f backend/Dockerfile ./back
 docker build --platform linux/amd64 -t fsrs-frontend -f frontend/Dockerfile ./frontend
 ```
 
-### Deploy to Production VM (Full Steps)
+### Deploy to Production VM
 
-Set the current production host once for the shell session:
-
+**Recommended: Use the release script**
 ```bash
-export PROD_HOST=root@5.78.201.47
+# From a feature branch with uncommitted changes:
+scripts/release-prod.sh -m "Your commit message"
+
+# From main with clean working tree:
+scripts/release-prod.sh
+
+# Skip tests if already verified:
+scripts/release-prod.sh --skip-tests
 ```
 
-**Step 1: Build for amd64**
+The script handles: committing, pushing, merging to main, running tests, building images, uploading, restarting containers, and verification.
+
+**Manual steps (if needed)**
+
+Run each step separately - avoid chaining with `&&` as shell variable expansion can fail:
+
 ```bash
-git checkout main
+# Step 1: Build images
 docker build --platform linux/amd64 -t fsrs-backend -f backend/Dockerfile ./backend
 docker build --platform linux/amd64 -t fsrs-frontend -f frontend/Dockerfile ./frontend
-```
 
-**Step 2: Save and upload**
-```bash
+# Step 2: Save images
 docker save fsrs-backend:latest | gzip > /tmp/fsrs-backend.tar.gz
 docker save fsrs-frontend:latest | gzip > /tmp/fsrs-frontend.tar.gz
-scp /tmp/fsrs-backend.tar.gz /tmp/fsrs-frontend.tar.gz "$PROD_HOST":/root/
-```
 
-**Step 3: Load and restart on server**
-```bash
-ssh "$PROD_HOST" "gunzip -c /root/fsrs-backend.tar.gz | docker load && gunzip -c /root/fsrs-frontend.tar.gz | docker load && cd /root/fsrs && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up -d"
-```
+# Step 3: Upload to server
+scp /tmp/fsrs-backend.tar.gz /tmp/fsrs-frontend.tar.gz root@5.78.201.47:/root/
 
-**Step 4: Verify deployment**
-```bash
-# Check containers are running with correct images
-ssh "$PROD_HOST" "docker ps && docker inspect --format='{{.Name}}: {{.Image}}' fsrs-backend-1 fsrs-frontend-1"
+# Step 4: Load and restart on server
+ssh root@5.78.201.47 "gunzip -c /root/fsrs-backend.tar.gz | docker load && gunzip -c /root/fsrs-frontend.tar.gz | docker load && cd /root/fsrs && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up -d && docker image prune -f"
 
-# Clean up old images
-ssh "$PROD_HOST" "docker image prune -f"
-
-# Test site responds
+# Step 5: Verify
+ssh root@5.78.201.47 "docker ps"
 curl -s -o /dev/null -w "%{http_code}" https://fsrs.ziyang.li/
-```
-
-**One-liner (after building)**
-```bash
-docker save fsrs-backend:latest | gzip > /tmp/fsrs-backend.tar.gz && docker save fsrs-frontend:latest | gzip > /tmp/fsrs-frontend.tar.gz && scp /tmp/fsrs-backend.tar.gz /tmp/fsrs-frontend.tar.gz "$PROD_HOST":/root/ && ssh "$PROD_HOST" "gunzip -c /root/fsrs-backend.tar.gz | docker load && gunzip -c /root/fsrs-frontend.tar.gz | docker load && cd /root/fsrs && docker compose -f docker-compose.prod.yml down && docker compose -f docker-compose.prod.yml up -d && docker image prune -f"
 ```
 
 ### Fresh Host Bootstrap
