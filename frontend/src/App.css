@@ -2249,6 +2249,14 @@ button.code-block-copy:active {
     gap: 12px;
   }
 
+  .user-info {
+    gap: 8px;
+  }
+
+  .user-info .user-email {
+    display: none;
+  }
+
   .main {
     padding: 24px 16px;
   }

@@ -122,7 +122,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         </div>
         {showUserInfo && (
           <div className="user-info">
-            <span>{isDemo ? 'Demo User' : user?.email}</span>
+            <span className="user-email">{isDemo ? 'Demo User' : user?.email}</span>
             <ThemeToggle />
             <button onClick={handleLogout}>{isDemo ? 'Exit Demo' : 'Logout'}</button>
           </div>
