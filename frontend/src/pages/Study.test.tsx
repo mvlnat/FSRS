@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import type { CardState, CardWithState } from '../types';
 import * as api from '../api/client';
 import { Study } from './Study';
@@ -75,6 +75,22 @@ function renderStudyWithNavigation() {
   );
 }
 
+function LocationDisplay() {
+  const location = useLocation();
+  return <div>{`${location.pathname}${location.search}`}</div>;
+}
+
+function renderStudyWithDeckEditorRoute() {
+  return render(
+    <MemoryRouter initialEntries={['/study/deck-1']}>
+      <Routes>
+        <Route path="/study/:deckId" element={<Study />} />
+        <Route path="/decks/:id" element={<LocationDisplay />} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
 describe('Study', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -137,6 +153,22 @@ describe('Study', () => {
     await screen.findByText('What is FSRS?');
 
     expect(container.querySelector('.study-container')).toHaveClass('study-container-review');
+  });
+
+  it('navigates from the active review card to its editor', async () => {
+    const user = userEvent.setup();
+
+    mockedApi.getStudySession.mockResolvedValueOnce({
+      due_cards: [studyCard],
+      pending_learning_cards: [],
+    });
+
+    renderStudyWithDeckEditorRoute();
+
+    await screen.findByText('What is FSRS?');
+    await user.click(screen.getByRole('button', { name: 'Edit Card' }));
+
+    expect(await screen.findByText('/decks/deck-1?editCard=card-1')).toBeInTheDocument();
   });
 
   it('updates session totals when a background refresh adds more due cards', async () => {

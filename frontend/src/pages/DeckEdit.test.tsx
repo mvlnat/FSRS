@@ -67,9 +67,9 @@ const biologyTags: Tag[] = [
   },
 ];
 
-function renderDeckEdit() {
+function renderDeckEdit(initialEntry = '/decks/deck-1') {
   return render(
-    <MemoryRouter initialEntries={['/decks/deck-1']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route path="/decks/:id" element={<DeckEdit />} />
       </Routes>
@@ -255,6 +255,21 @@ describe('DeckEdit', () => {
         '',
         ['tag-1'],
       );
+    });
+  });
+
+  it('opens the requested card editor from the URL', async () => {
+    mockedApi.getDeck.mockResolvedValue(baseDeck);
+    mockedApi.getCards.mockResolvedValue(initialCards);
+    mockedApi.getTags.mockResolvedValue(noTags);
+
+    renderDeckEdit('/decks/deck-1?editCard=card-1');
+
+    const frontInput = await screen.findByDisplayValue('Existing question');
+    expect(screen.getByDisplayValue('Existing answer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(frontInput).toHaveFocus();
     });
   });
 

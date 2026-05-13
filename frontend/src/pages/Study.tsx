@@ -723,6 +723,15 @@ export function Study() {
         <button onClick={() => navigate('/')} className="back-btn">
           Back to Decks
         </button>
+        {currentCard && (
+          <button
+            type="button"
+            onClick={() => navigate(`/decks/${currentCard.deck_id}?editCard=${encodeURIComponent(currentCard.id)}`)}
+            className="back-btn"
+          >
+            Edit Card
+          </button>
+        )}
       </div>
 
       {error && !isErrorState && <div className="error" role="alert">{error}</div>}

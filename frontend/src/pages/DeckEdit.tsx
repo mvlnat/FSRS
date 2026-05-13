@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Deck, CardWithState, Tag } from '../types';
 import * as api from '../api/client';
 import { getCardTitle, normalizeCardTitle } from '../utils/cards';
@@ -16,6 +16,8 @@ const SETTINGS_PANEL_ID = 'deck-edit-panel-settings';
 export function DeckEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedEditCardId = searchParams.get('editCard');
   const [deck, setDeck] = useState<Deck | null>(null);
   const [cards, setCards] = useState<CardWithState[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -24,6 +26,9 @@ export function DeckEdit() {
   const [activeTab, setActiveTab] = useState<Tab>('cards');
   const cardsTabRef = useRef<HTMLButtonElement | null>(null);
   const settingsTabRef = useRef<HTMLButtonElement | null>(null);
+  const cardItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const editFrontRef = useRef<HTMLTextAreaElement | null>(null);
+  const handledRequestedEditCardRef = useRef<string | null>(null);
 
   // Search, sort, and filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -279,13 +284,45 @@ export function DeckEdit() {
     }
   };
 
-  const startEditing = (card: CardWithState) => {
+  const startEditing = useCallback((card: CardWithState) => {
     setEditingCard(card.id);
     setEditFront(card.front);
     setEditBack(card.back);
     setEditLink(card.link || '');
     setEditTagIds(card.tags?.map(t => t.id) || []);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!requestedEditCardId) {
+      handledRequestedEditCardRef.current = null;
+      return;
+    }
+
+    if (loading || handledRequestedEditCardRef.current === requestedEditCardId) {
+      return;
+    }
+
+    const requestedCard = cards.find((card) => card.id === requestedEditCardId);
+    if (!requestedCard) {
+      return;
+    }
+
+    handledRequestedEditCardRef.current = requestedEditCardId;
+    setActiveTab('cards');
+    setShowAddCard(false);
+    setSearchQuery('');
+    setFilterTagId('');
+    startEditing(requestedCard);
+  }, [cards, loading, requestedEditCardId, startEditing]);
+
+  useEffect(() => {
+    if (!editingCard) {
+      return;
+    }
+
+    cardItemRefs.current[editingCard]?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    editFrontRef.current?.focus();
+  }, [editingCard]);
 
   const focusTab = (tab: Tab) => {
     if (tab === 'cards') {
@@ -661,7 +698,13 @@ export function DeckEdit() {
                 const tagsGroupLabelId = `edit-tags-${card.id}`;
 
                 return (
-                  <div key={card.id} className="card-item">
+                  <div
+                    key={card.id}
+                    ref={(element) => {
+                      cardItemRefs.current[card.id] = element;
+                    }}
+                    className="card-item"
+                  >
                     {editingCard === card.id ? (
                       <div className="card-edit">
                         <p className="form-hint">
@@ -672,6 +715,7 @@ export function DeckEdit() {
                             <label htmlFor={editFrontId}>Front</label>
                             <textarea
                               id={editFrontId}
+                              ref={editFrontRef}
                               value={editFront}
                               onChange={(e) => setEditFront(e.target.value)}
                               rows={6}
